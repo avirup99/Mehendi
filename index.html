@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Hand · 3D Viewer</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div id="header">
+  <span class="header-label">3D Viewer</span>
+  <span class="header-title">Hand</span>
+  <span class="header-label" id="poly-count"></span>
+</div>
+
+<div id="mode-toggle">
+  <button class="mode-btn active" id="btn-orbit" onclick="setMode('orbit')">Orbit</button>
+  <button class="mode-btn" id="btn-pan" onclick="setMode('pan')">Pan</button>
+  <button class="mode-btn" id="btn-grab" onclick="setDrawGrab()" style="display:none;">Grab</button>
+</div>
+
+<div id="right-controls">
+  <button id="reset-btn" onclick="resetCamera()" title="Reset view">↺</button>
+  <div id="zoom-controls">
+    <div class="z-btn" id="z-in" title="Zoom in">+</div>
+    <div class="z-btn" id="z-out" title="Zoom out">−</div>
+  </div>
+</div>
+
+<div id="hint">Drag to orbit · Scroll to zoom · Pinch on touch</div>
+
+<div id="icon-strip">
+  <button class="strip-btn" id="strip-skeleton" data-panel="skeleton">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="7" y="1" width="2" height="14" rx="1" fill="currentColor" opacity="0.5"/>
+      <rect x="1" y="7" width="14" height="2" rx="1" fill="currentColor" opacity="0.5"/>
+      <circle cx="8" cy="8" r="2.5" fill="currentColor"/>
+    </svg>
+    <span class="tip">Skeleton</span>
+  </button>
+
+  <button class="strip-btn" id="strip-scene" data-panel="scene">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="3" fill="currentColor"/>
+      <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+    </svg>
+    <span class="tip">Scene</span>
+  </button>
+
+
+  <button class="strip-btn" id="strip-uv" data-panel="uv">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.3"/>
+      <path d="M2 6h12M6 2v12" stroke="currentColor" stroke-width="1" stroke-dasharray="2 1.5" opacity="0.5"/>
+      <circle cx="10" cy="10" r="2" fill="currentColor" opacity="0.7"/>
+    </svg>
+    <span class="tip">UV Designer</span>
+  </button>
+
+  <button class="strip-btn" id="strip-draw" data-panel="draw">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2.5 13.5L3.5 10L10.5 3a1.414 1.414 0 0 1 2 0l.5.5a1.414 1.414 0 0 1 0 2L6 12.5 2.5 13.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+      <path d="M9 4.5l2.5 2.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+    </svg>
+    <span class="tip">Draw</span>
+  </button>
+
+  <button class="strip-btn" id="strip-models" data-panel="models">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M8 1.5L14 5v6l-6 3.5L2 11V5L8 1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+      <path d="M8 1.5V15M2 5l6 3.5L14 5" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+    </svg>
+    <span class="tip">Load Model</span>
+  </button>
+
+  <div class="strip-spacer"></div>
+
+  <button class="strip-btn" id="strip-pin">
+    <svg id="pin-icon" width="15" height="15" viewBox="0 0 15 15" fill="none">
+      <path d="M7.5 1.5L7.5 13.5M1.5 7.5L13.5 7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+    </svg>
+    <span class="tip" id="pin-tip">Pin panel open</span>
+  </button>
+
+</div>
+
+<div id="panel-drawer">
+  <div id="drawer-resize"></div>
+  <div id="panel-head">
+    <span id="panel-head-title">Skeleton</span>
+    <span id="panel-head-badge"></span>
+  </div>
+  <div id="panel-body">
+
+    <!-- SKELETON -->
+    <div id="content-skeleton" style="display:flex;flex-direction:column;gap:11px;">
+
+      <!-- 2D Skeleton Diagram -->
+      <div id="skel-diagram-wrap" style="width:100%;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:rgba(0,0,0,0.018);flex-shrink:0;">
+        <canvas id="skel-diagram" style="display:block;width:100%;"></canvas>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:-4px;">
+        <span class="section-title" style="border:none;padding:0;margin:0;">Bone List</span>
+        <span id="skel-diagram-bone-hover" style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-secondary);letter-spacing:0.04em;min-height:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;text-align:right;"></span>
+      </div>
+
+      <input id="bone-search" type="text" placeholder="Search bones…" autocomplete="off" spellcheck="false">
+      <div id="bone-list-wrap">
+        <div id="bone-list"></div>
+        <div id="no-bones-msg">No skeleton found</div>
+      </div>
+      <div id="bone-name-display">— select a bone —</div>
+      <div class="bone-axis-row">
+        <span class="bone-axis-label x">X</span>
+        <div class="slider-wrap"><input type="range" id="bone-rx" min="-180" max="180" step="1" value="0"></div>
+        <span class="bone-val" id="bone-rx-val">0°</span>
+      </div>
+      <div class="bone-axis-row">
+        <span class="bone-axis-label y">Y</span>
+        <div class="slider-wrap"><input type="range" id="bone-ry" min="-180" max="180" step="1" value="0"></div>
+        <span class="bone-val" id="bone-ry-val">0°</span>
+      </div>
+      <div class="bone-axis-row">
+        <span class="bone-axis-label z">Z</span>
+        <div class="slider-wrap"><input type="range" id="bone-rz" min="-180" max="180" step="1" value="0"></div>
+        <span class="bone-val" id="bone-rz-val">0°</span>
+      </div>
+      <div class="bone-btn-row">
+        <button class="bone-action-btn" id="bone-reset-btn">Reset bone</button>
+        <button class="bone-action-btn" id="bone-reset-all-btn">Reset all</button>
+        <button class="bone-action-btn" id="bone-unselect-all-btn" disabled>Unselect all</button>
+      </div>
+    </div>
+
+    <!-- SCENE -->
+    <div id="content-scene" style="display:none;flex-direction:column;gap:11px;">
+      <div class="section-title">Environment</div>
+      <div class="row">
+        <span class="row-label">Background</span>
+        <div class="color-wrap">
+          <input type="color" id="bg-color" value="#ffffff">
+          <div class="color-swatch" id="bg-swatch" style="background:#ffffff"></div>
+        </div>
+      </div>
+      <div class="row">
+        <span class="row-label">Exposure</span>
+        <div class="slider-wrap"><input type="range" id="exposure" min="0.3" max="2.5" step="0.05" value="1.1"></div>
+        <span class="value-label" id="exposure-val">1.1</span>
+      </div>
+      <div class="section-title">Key Light</div>
+      <div class="row">
+        <span class="row-label">Color</span>
+        <div class="color-wrap">
+          <input type="color" id="key-color" value="#fff5e8">
+          <div class="color-swatch" id="key-swatch" style="background:#fff5e8"></div>
+        </div>
+        <div class="slider-wrap"><input type="range" id="key-intensity" min="0" max="4" step="0.05" value="1.4"></div>
+        <span class="value-label" id="key-val">1.4</span>
+      </div>
+      <div class="section-title">Fill Light</div>
+      <div class="row">
+        <span class="row-label">Color</span>
+        <div class="color-wrap">
+          <input type="color" id="fill-color" value="#e8f0ff">
+          <div class="color-swatch" id="fill-swatch" style="background:#e8f0ff"></div>
+        </div>
+        <div class="slider-wrap"><input type="range" id="fill-intensity" min="0" max="3" step="0.05" value="0.5"></div>
+        <span class="value-label" id="fill-val">0.5</span>
+      </div>
+      <div class="section-title">Ambient</div>
+      <div class="row">
+        <span class="row-label">Color</span>
+        <div class="color-wrap">
+          <input type="color" id="amb-color" value="#ffffff">
+          <div class="color-swatch" id="amb-swatch" style="background:#ffffff"></div>
+        </div>
+        <div class="slider-wrap"><input type="range" id="amb-intensity" min="0" max="3" step="0.05" value="0.6"></div>
+        <span class="value-label" id="amb-val">0.6</span>
+      </div>
+      <button id="scene-reset-btn">↺ Reset scene defaults</button>
+    </div>
+
+
+    <!-- UV DESIGNER -->
+    <div id="content-uv" style="display:none;flex-direction:column;gap:11px;">
+      <div id="uv-canvas-wrap">
+        <canvas id="uv-wire-canvas"></canvas>
+        <canvas id="uv-canvas"></canvas>
+      </div>
+      <label id="uv-wire-toggle">
+        <input type="checkbox" id="uv-wire-check" checked>
+        <span class="tog-track"></span>
+        UV wireframe overlay
+      </label>
+      <span id="uv-wire-status">Load a model to see UV map</span>
+      <div id="uv-layers">
+        <div id="uv-empty-msg">Upload images to place mehendi<br>patterns on the UV map</div>
+      </div>
+      <span id="uv-selected-name">—</span>
+      <div class="uv-ctrl-row">
+        <span class="uv-ctrl-label">X</span>
+        <div class="slider-wrap"><input type="range" id="uv-x" min="0" max="1" step="0.005" value="0.5"></div>
+        <span class="uv-val" id="uv-x-val">0.50</span>
+      </div>
+      <div class="uv-ctrl-row">
+        <span class="uv-ctrl-label">Y</span>
+        <div class="slider-wrap"><input type="range" id="uv-y" min="0" max="1" step="0.005" value="0.5"></div>
+        <span class="uv-val" id="uv-y-val">0.50</span>
+      </div>
+      <div class="uv-ctrl-row">
+        <span class="uv-ctrl-label">Scale</span>
+        <div class="slider-wrap"><input type="range" id="uv-scale" min="0.02" max="1" step="0.005" value="0.3"></div>
+        <span class="uv-val" id="uv-scale-val">0.30</span>
+      </div>
+      <div class="uv-ctrl-row">
+        <span class="uv-ctrl-label">Rotate</span>
+        <div class="slider-wrap"><input type="range" id="uv-rot" min="-180" max="180" step="1" value="0"></div>
+        <span class="uv-val" id="uv-rot-val">0°</span>
+      </div>
+      <div class="uv-ctrl-row">
+        <span class="uv-ctrl-label">Opacity</span>
+        <div class="slider-wrap"><input type="range" id="uv-opacity" min="0" max="1" step="0.01" value="1"></div>
+        <span class="uv-val" id="uv-opacity-val">1.00</span>
+      </div>
+      <div class="uv-ctrl-row">
+        <span class="uv-ctrl-label">Tint</span>
+        <div class="color-wrap" style="width:22px;height:22px;flex-shrink:0;">
+          <input type="color" id="uv-tint-color" value="#000000">
+          <div class="color-swatch" id="uv-tint-swatch" style="background:#000000;border-radius:50%;"></div>
+        </div>
+        <div class="slider-wrap"><input type="range" id="uv-tint-strength" min="0" max="1" step="0.01" value="0"></div>
+        <span class="uv-val" id="uv-tint-strength-val">0.00</span>
+      </div>
+      <input type="file" id="uv-upload-input" accept="image/*" multiple>
+      <div id="uv-upload-btn" onclick="document.getElementById('uv-upload-input').click()">+ Upload images</div>
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Recent files</span>
+        <button id="uv-history-clear">Clear</button>
+      </div>
+      <div id="uv-history-list">
+        <div id="uv-history-empty">No history yet</div>
+      </div>
+    </div>
+
+
+    <!-- MODEL LOADER PANEL -->
+    <div id="content-models" style="display:none;flex-direction:column;gap:12px;">
+
+      <!-- Current model indicator -->
+      <div class="ml-current-row">
+        <span class="ml-current-label">Active</span>
+        <span id="ml-current-name" class="ml-current-name">hand.glb</span>
+      </div>
+
+      <!-- Restore original -->
+      <button id="ml-restore-btn" class="ml-restore-btn">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+          <path d="M2 7a5 5 0 1 0 1.5-3.5L2 2v3.5h3.5L4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Restore original hand
+      </button>
+
+      <!-- Drop zone -->
+      <div id="ml-dropzone" class="ml-dropzone">
+        <input type="file" id="ml-file-input" accept=".glb,.gltf" style="display:none;">
+        <div class="ml-drop-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <path d="M14 3l5.5 9H8.5L14 3zM6 14h16l-3.5 11H9.5L6 14z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none" opacity="0.6"/>
+            <circle cx="14" cy="14" r="2" fill="currentColor" opacity="0.25"/>
+          </svg>
+        </div>
+        <div class="ml-drop-primary">Drop .glb / .gltf here</div>
+        <div class="ml-drop-secondary">or click to browse</div>
+      </div>
+
+      <!-- Progress bar -->
+      <div class="ml-progress-wrap" id="ml-progress-wrap" style="display:none;">
+        <div class="ml-progress-bar" id="ml-progress-bar"></div>
+      </div>
+
+      <!-- Status line -->
+      <div id="ml-status" class="ml-status ml-status-idle"></div>
+
+      <!-- Info note -->
+      <div class="ml-note">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;margin-top:1px;">
+          <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
+          <path d="M6 5v4M6 3.5v.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        Draw &amp; UV layers stay intact when you swap models. UV coordinates may differ on new models.
+      </div>
+
+      <!-- History -->
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Recent models</span>
+        <button id="ml-history-clear">Clear</button>
+      </div>
+      <div id="ml-history-list" class="ml-history-list">
+        <div id="ml-history-empty" class="ml-history-empty">No models loaded yet</div>
+      </div>
+
+    </div>
+    <!-- END MODEL LOADER PANEL -->
+
+    <!-- DRAW PANEL -->
+    <div id="content-draw" style="display:none;flex-direction:column;gap:11px;">
+      <div id="draw-canvas-wrap">
+        <canvas id="draw-wire-canvas"></canvas>
+        <canvas id="draw-canvas"></canvas>
+        <div id="draw-cursor-dot"></div>
+      </div>
+      <p style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-secondary);line-height:1.7;margin:0;">
+        ✦ Paint directly on the 3D model — strokes appear in real time.<br>
+        Use the UV map preview below as a reference.
+      </p>
+      <div class="section-title">Tool</div>
+      <div class="draw-tool-row">
+        <button class="draw-tool-btn active" data-tool="brush" title="Brush">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 12c1 0 2.5-.5 3.5-1.5L11 5l-2-2L3.5 8.5C2.5 9.5 2 11 2 12z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><circle cx="10" cy="3.5" r="1.2" fill="currentColor" opacity="0.6"/></svg>
+          Brush
+        </button>
+        <button class="draw-tool-btn" data-tool="eraser" title="Eraser">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="2" y="7" width="10" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M4 7V4a3 3 0 0 1 6 0v3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          Eraser
+        </button>
+      </div>
+
+      <!-- Pen Type Selector -->
+      <div class="section-title">Pen Type</div>
+      <div id="draw-pen-type-row" style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+          <button class="draw-pen-btn active" data-pen="brush" title="Soft brush with feathered edges">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M3 13c1.5 0 3-.7 4-2L12 5l-1.5-1.5L5 9C4 10 3 11.5 3 13z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+              <ellipse cx="12" cy="4" rx="1.8" ry="1.8" fill="currentColor" opacity="0.5"/>
+            </svg>
+            Brush
+          </button>
+          <button class="draw-pen-btn" data-pen="ink" title="Precise ink pen — speed-sensitive width">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M4 12L12 3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M4 12L12 3" stroke="currentColor" stroke-width="0.6" stroke-linecap="round" opacity="0.4"/>
+              <circle cx="4" cy="12.5" r="1.2" fill="currentColor" opacity="0.6"/>
+            </svg>
+            Ink Pen
+          </button>
+          <button class="draw-pen-btn" data-pen="spray" title="Spray — scatter of dots">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <circle cx="5" cy="10" r="1" fill="currentColor" opacity="0.9"/>
+              <circle cx="8" cy="7" r="0.8" fill="currentColor" opacity="0.7"/>
+              <circle cx="11" cy="9" r="1" fill="currentColor" opacity="0.8"/>
+              <circle cx="7" cy="11" r="0.7" fill="currentColor" opacity="0.6"/>
+              <circle cx="10" cy="6" r="0.6" fill="currentColor" opacity="0.5"/>
+              <circle cx="6" cy="8" r="0.9" fill="currentColor" opacity="0.75"/>
+              <circle cx="9" cy="11.5" r="0.7" fill="currentColor" opacity="0.55"/>
+              <path d="M12 3l1-1M12 3h-1M12 3v-1" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.4"/>
+            </svg>
+            Spray
+          </button>
+          <button class="draw-pen-btn" data-pen="marker" title="Flat marker — semi-transparent wide strokes">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <rect x="3" y="6" width="10" height="5" rx="1" fill="currentColor" opacity="0.35"/>
+              <rect x="3" y="6" width="10" height="5" rx="1" stroke="currentColor" stroke-width="1"/>
+              <path d="M11 4l2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              <path d="M13 4l-2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+            Marker
+          </button>
+          <button class="draw-pen-btn" data-pen="calligraphy" title="Calligraphy nib — angle-sensitive width" style="grid-column:1/-1;">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M3 13L13 3" stroke="currentColor" stroke-width="4" stroke-linecap="round" opacity="0.2"/>
+              <path d="M3 13L13 3" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+              <path d="M3 11L5 13" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+            </svg>
+            Calligraphy
+          </button>
+        </div>
+        <div id="pen-desc" style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-secondary);padding:5px 8px;background:rgba(0,0,0,0.03);border:1px solid var(--border);border-radius:6px;line-height:1.6;transition:opacity 0.2s;">
+          Soft round strokes with feathered edges — ideal for shading.
+        </div>
+      </div>
+
+      <div class="section-title">Color</div>
+      <div class="draw-palette">
+        <div class="draw-swatch active" data-color="#8B1A1A" style="background:#8B1A1A;" title="Deep Red"></div>
+        <div class="draw-swatch" data-color="#C0392B" style="background:#C0392B;" title="Red"></div>
+        <div class="draw-swatch" data-color="#E07B39" style="background:#E07B39;" title="Orange"></div>
+        <div class="draw-swatch" data-color="#8B4513" style="background:#8B4513;" title="Brown"></div>
+        <div class="draw-swatch" data-color="#4A2C17" style="background:#4A2C17;" title="Dark Brown"></div>
+        <div class="draw-swatch" data-color="#1A1A1A" style="background:#1A1A1A;" title="Black"></div>
+        <div class="draw-swatch" data-color="#2E4057" style="background:#2E4057;" title="Navy"></div>
+        <div class="draw-swatch" data-color="#2D6A4F" style="background:#2D6A4F;" title="Forest Green"></div>
+        <div class="draw-swatch" data-color="#8B5E3C" style="background:#8B5E3C;" title="Tan"></div>
+        <div class="draw-swatch" data-color="#ffffff" style="background:#fff;border-color:rgba(0,0,0,0.18);" title="White"></div>
+        <div class="draw-swatch draw-swatch-custom" title="Custom color" style="background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);">
+          <input type="color" id="draw-color-picker" value="#8B1A1A" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;">
+          <div id="draw-custom-swatch" style="position:absolute;inset:0;border-radius:50%;pointer-events:none;"></div>
+        </div>
+      </div>
+      <div class="section-title">Size &amp; Opacity</div>
+      <div class="uv-ctrl-row" id="draw-brush-size-row">
+        <span class="uv-ctrl-label">Size</span>
+        <div class="slider-wrap"><input type="range" id="draw-size" min="1" max="80" step="1" value="18"></div>
+        <span class="uv-val" id="draw-size-val">18px</span>
+      </div>
+      <div class="uv-ctrl-row" id="draw-eraser-size-row" style="display:none;">
+        <span class="uv-ctrl-label">Size</span>
+        <div class="slider-wrap"><input type="range" id="draw-eraser-size" min="4" max="120" step="1" value="28"></div>
+        <span class="uv-val" id="draw-eraser-size-val">28px</span>
+      </div>
+      <div class="uv-ctrl-row">
+        <span class="uv-ctrl-label">Opacity</span>
+        <div class="slider-wrap"><input type="range" id="draw-opacity" min="0.02" max="1" step="0.01" value="0.85"></div>
+        <span class="uv-val" id="draw-opacity-val">0.85</span>
+      </div>
+      <label class="draw-pressure-label">
+        <input type="checkbox" id="draw-pressure-check">
+        <span class="tog-track"></span>
+        Pen pressure sensitivity
+      </label>
+      <label id="draw-wire-toggle">
+        <input type="checkbox" id="draw-wire-check" checked>
+        <span class="tog-track"></span>
+        Show UV guide
+      </label>
+      <div class="bone-btn-row" style="margin-top:2px;">
+        <button class="bone-action-btn" id="draw-undo-btn" disabled>↩ Undo</button>
+        <button class="bone-action-btn" id="draw-redo-btn" disabled>↪ Redo</button>
+        <button class="bone-action-btn" id="draw-clear-btn">✕ Clear all</button>
+      </div>
+    </div>
+    <!-- END DRAW PANEL -->
+  </div>
+</div>
+
+<div id="loading">
+  <div class="load-title">Loading model</div>
+  <div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div>
+</div>
+<div id="error"><p id="error-msg">Failed to load model.</p></div>
+
+<!-- 3D draw cursor overlay -->
+<div id="cursor-3d"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- Load modules in dependency order (no bundler needed) -->
+<script src="js/scene.js"></script>
+<script src="js/skeleton.js"></script>
+<script src="js/uv-designer.js"></script>
+<script src="js/draw.js"></script>
+<script src="js/draw-3d.js"></script>
+<script src="js/scene-controls.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/model-loader.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

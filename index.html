@@ -17,9 +17,18 @@
 </div>
 
 <div id="mode-toggle">
-  <button class="mode-btn active" id="btn-orbit" onclick="setMode('orbit')">Orbit</button>
-  <button class="mode-btn" id="btn-pan" onclick="setMode('pan')">Pan</button>
-  <button class="mode-btn" id="btn-grab" onclick="setDrawGrab()" style="display:none;">Grab</button>
+  <button class="mode-btn active" id="btn-orbit" onclick="setMode('orbit')">
+    Orbit
+    <span class="mode-tip">Drag to rotate around the model</span>
+  </button>
+  <button class="mode-btn" id="btn-pan" onclick="setMode('pan')">
+    Pan
+    <span class="mode-tip">Drag to move the camera</span>
+  </button>
+  <button class="mode-btn" id="btn-grab" onclick="setDrawGrab()" style="display:none;">
+    Grab
+    <span class="mode-tip">Temporarily orbit while in Draw mode</span>
+  </button>
 </div>
 
 <div id="right-controls">
@@ -39,7 +48,7 @@
       <rect x="1" y="7" width="14" height="2" rx="1" fill="currentColor" opacity="0.5"/>
       <circle cx="8" cy="8" r="2.5" fill="currentColor"/>
     </svg>
-    <span class="tip">Skeleton</span>
+    <span class="tip">Pose</span>
   </button>
 
   <button class="strip-btn" id="strip-scene" data-panel="scene">
@@ -47,7 +56,7 @@
       <circle cx="8" cy="8" r="3" fill="currentColor"/>
       <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
     </svg>
-    <span class="tip">Scene</span>
+    <span class="tip">Lighting</span>
   </button>
 
 
@@ -57,7 +66,7 @@
       <path d="M2 6h12M6 2v12" stroke="currentColor" stroke-width="1" stroke-dasharray="2 1.5" opacity="0.5"/>
       <circle cx="10" cy="10" r="2" fill="currentColor" opacity="0.7"/>
     </svg>
-    <span class="tip">UV Designer</span>
+    <span class="tip">Design</span>
   </button>
 
   <button class="strip-btn" id="strip-draw" data-panel="draw">
@@ -78,11 +87,17 @@
 
   <div class="strip-spacer"></div>
 
-  <button class="strip-btn" id="strip-pin">
-    <svg id="pin-icon" width="15" height="15" viewBox="0 0 15 15" fill="none">
-      <path d="M7.5 1.5L7.5 13.5M1.5 7.5L13.5 7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+  <button class="strip-btn" id="strip-theme" onclick="toggleTheme()" title="Toggle dark/light mode">
+    <!-- Moon: shown in light mode -->
+    <svg id="theme-icon-moon" width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <path d="M13.5 10.5A6 6 0 0 1 5.5 2.5a6 6 0 1 0 8 8z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
-    <span class="tip" id="pin-tip">Pin panel open</span>
+    <!-- Sun: shown in dark mode -->
+    <svg id="theme-icon-sun" width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.3"/>
+      <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    <span class="tip" id="theme-tip">Switch to dark mode</span>
   </button>
 
 </div>
@@ -90,13 +105,24 @@
 <div id="panel-drawer">
   <div id="drawer-resize"></div>
   <div id="panel-head">
-    <span id="panel-head-title">Skeleton</span>
+    <span id="panel-head-title">Pose</span>
     <span id="panel-head-badge"></span>
   </div>
   <div id="panel-body">
 
     <!-- SKELETON -->
     <div id="content-skeleton" style="display:flex;flex-direction:column;gap:11px;">
+
+      <!-- Hint -->
+      <button class="panel-hint-toggle" data-hint="hint-skeleton">
+        <i class="hint-chevron">▾</i> How to use
+      </button>
+      <div class="panel-hint" id="hint-skeleton">
+        <div class="panel-hint-body">
+          <strong>Skeleton</strong><br>
+          Click any joint on the diagram or select a bone from the list below. Use the X / Y / Z sliders to rotate it. Hold <em>click</em> on multiple bones to select them all at once — sliders affect every selected bone simultaneously.
+        </div>
+      </div>
 
       <!-- 2D Skeleton Diagram -->
       <div id="skel-diagram-wrap" style="width:100%;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:rgba(0,0,0,0.018);flex-shrink:0;">
@@ -137,6 +163,18 @@
 
     <!-- SCENE -->
     <div id="content-scene" style="display:none;flex-direction:column;gap:11px;">
+
+      <!-- Hint -->
+      <button class="panel-hint-toggle" data-hint="hint-scene">
+        <i class="hint-chevron">▾</i> How to use
+      </button>
+      <div class="panel-hint" id="hint-scene">
+        <div class="panel-hint-body">
+          <strong>Scene</strong><br>
+          Adjust the background colour, exposure, and three light sources — key, fill, and ambient. All changes are reflected on the 3D model in real time. Hit Reset to restore the defaults.
+        </div>
+      </div>
+
       <div class="section-title">Environment</div>
       <div class="row">
         <span class="row-label">Background</span>
@@ -152,7 +190,6 @@
       </div>
       <div class="section-title">Key Light</div>
       <div class="row">
-        <span class="row-label">Color</span>
         <div class="color-wrap">
           <input type="color" id="key-color" value="#fff5e8">
           <div class="color-swatch" id="key-swatch" style="background:#fff5e8"></div>
@@ -162,7 +199,6 @@
       </div>
       <div class="section-title">Fill Light</div>
       <div class="row">
-        <span class="row-label">Color</span>
         <div class="color-wrap">
           <input type="color" id="fill-color" value="#e8f0ff">
           <div class="color-swatch" id="fill-swatch" style="background:#e8f0ff"></div>
@@ -172,7 +208,6 @@
       </div>
       <div class="section-title">Ambient</div>
       <div class="row">
-        <span class="row-label">Color</span>
         <div class="color-wrap">
           <input type="color" id="amb-color" value="#ffffff">
           <div class="color-swatch" id="amb-swatch" style="background:#ffffff"></div>
@@ -186,6 +221,18 @@
 
     <!-- UV DESIGNER -->
     <div id="content-uv" style="display:none;flex-direction:column;gap:11px;">
+
+      <!-- Hint -->
+      <button class="panel-hint-toggle" data-hint="hint-uv">
+        <i class="hint-chevron">▾</i> How to use
+      </button>
+      <div class="panel-hint" id="hint-uv">
+        <div class="panel-hint-body">
+          <strong>UV Designer</strong><br>
+          Upload mehendi pattern images — they are placed as layers on the UV map and appear on the 3D model instantly. Drag the layer handles to move, scale, or rotate. Stack multiple layers and adjust opacity and tint per layer. The blue wireframe shows the model's UV seams as a guide.
+        </div>
+      </div>
+
       <div id="uv-canvas-wrap">
         <canvas id="uv-wire-canvas"></canvas>
         <canvas id="uv-canvas"></canvas>
@@ -195,7 +242,7 @@
         <span class="tog-track"></span>
         UV wireframe overlay
       </label>
-      <span id="uv-wire-status">Load a model to see UV map</span>
+
       <div id="uv-layers">
         <div id="uv-empty-msg">Upload images to place mehendi<br>patterns on the UV map</div>
       </div>
@@ -234,8 +281,47 @@
         <div class="slider-wrap"><input type="range" id="uv-tint-strength" min="0" max="1" step="0.01" value="0"></div>
         <span class="uv-val" id="uv-tint-strength-val">0.00</span>
       </div>
-      <input type="file" id="uv-upload-input" accept="image/*" multiple>
-      <div id="uv-upload-btn" onclick="document.getElementById('uv-upload-input').click()">+ Upload images</div>
+      <input type="file" id="uv-upload-input" accept="image/*" multiple style="display:none;">
+      <input type="file" id="uv-upload-input-nobg" accept="image/*" multiple style="display:none;">
+      <div id="uv-upload-btn" onclick="UV_DESIGNER.showUploadModal()">+ Upload images</div>
+
+      <!-- Upload mode modal -->
+      <div id="uv-upload-modal" style="display:none;position:fixed;inset:0;z-index:1000;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);backdrop-filter:blur(4px);">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 18px 16px;width:260px;box-shadow:0 8px 32px rgba(0,0,0,0.18);display:flex;flex-direction:column;gap:10px;">
+          <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-secondary);margin-bottom:2px;">Upload image</div>
+          <button id="uv-modal-nobg-btn" style="display:flex;align-items:center;gap:10px;padding:11px 14px;border:1px solid var(--border);border-radius:9px;background:transparent;cursor:pointer;text-align:left;transition:background 0.13s;width:100%;">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="14" height="14" rx="3" stroke="currentColor" stroke-width="1.3"/><path d="M2 13l4-4 3 3 3-4 4 5" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" opacity="0.6"/></svg>
+            <div>
+              <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.06em;color:var(--text-primary);">Without removing bg</div>
+              <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-secondary);margin-top:2px;">Use image as-is</div>
+            </div>
+          </button>
+          <button id="uv-modal-rmbg-btn" style="display:flex;align-items:center;gap:10px;padding:11px 14px;border:1px solid var(--border);border-radius:9px;background:transparent;cursor:pointer;text-align:left;transition:background 0.13s;width:100%;">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="14" height="14" rx="3" stroke="currentColor" stroke-width="1.3" stroke-dasharray="3 2"/><path d="M6 6l6 6M12 6l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.7"/></svg>
+            <div>
+              <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.06em;color:var(--text-primary);">Remove background</div>
+              <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-secondary);margin-top:2px;">Uses remove.bg API</div>
+            </div>
+          </button>
+          <!-- Key source badge -->
+          <div id="uv-rmbg-key-badge" style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:0.05em;padding:5px 10px;border-radius:6px;background:rgba(0,0,0,0.03);border:1px solid var(--border);text-align:center;">No API key configured</div>
+
+          <div id="uv-rmbg-key-row" style="display:none;flex-direction:column;gap:6px;">
+            <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-secondary);letter-spacing:0.04em;">Your remove.bg API key</div>
+            <input id="uv-rmbg-api-key" type="password" placeholder="Enter API key…" autocomplete="off" spellcheck="false"
+              style="width:100%;font-family:'DM Mono',monospace;font-size:10px;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:rgba(0,0,0,0.02);color:var(--text-primary);outline:none;letter-spacing:0.04em;">
+            <div style="display:flex;gap:5px;">
+              <button id="uv-rmbg-confirm-btn" style="flex:1;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:7px 0;background:var(--accent);color:var(--tip-text,#fff);border:none;border-radius:6px;cursor:pointer;transition:opacity 0.15s;">Save & use</button>
+              <button id="uv-rmbg-clear-key-btn" style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:0.08em;text-transform:uppercase;padding:7px 10px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text-secondary);cursor:pointer;transition:all 0.15s;" title="Clear saved key">Clear</button>
+            </div>
+          </div>
+          <div id="uv-rmbg-status" style="display:none;font-family:'DM Mono',monospace;font-size:9px;color:var(--text-secondary);text-align:center;padding:4px 0;"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:-4px;">
+            <button id="uv-modal-cancel-btn" style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:5px 0;background:transparent;border:none;color:var(--text-secondary);cursor:pointer;">Cancel</button>
+            <button onclick="document.getElementById('uv-rmbg-key-row').style.display='flex';document.getElementById('uv-rmbg-api-key').focus();" style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:0.06em;padding:5px 0;background:transparent;border:none;color:var(--text-secondary);cursor:pointer;text-decoration:underline;text-underline-offset:2px;">Change key</button>
+          </div>
+        </div>
+      </div>
       <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
         <span>Recent files</span>
         <button id="uv-history-clear">Clear</button>
@@ -248,6 +334,15 @@
 
     <!-- MODEL LOADER PANEL -->
     <div id="content-models" style="display:none;flex-direction:column;gap:12px;">
+
+      <!-- Note -->
+      <div class="ml-note" style="border-color: rgba(200,80,0,0.2); background: rgba(200,80,0,0.04);">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;margin-top:1px;">
+          <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
+          <path d="M6 5v4M6 3.5v.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        Changing the model will also remove designs within it.
+      </div>
 
       <!-- Current model indicator -->
       <div class="ml-current-row">
@@ -284,14 +379,7 @@
       <!-- Status line -->
       <div id="ml-status" class="ml-status ml-status-idle"></div>
 
-      <!-- Info note -->
-      <div class="ml-note">
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;margin-top:1px;">
-          <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
-          <path d="M6 5v4M6 3.5v.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-        </svg>
-        Draw &amp; UV layers stay intact when you swap models. UV coordinates may differ on new models.
-      </div>
+
 
       <!-- History -->
       <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
@@ -307,15 +395,14 @@
 
     <!-- DRAW PANEL -->
     <div id="content-draw" style="display:none;flex-direction:column;gap:11px;">
+
+
+
       <div id="draw-canvas-wrap">
         <canvas id="draw-wire-canvas"></canvas>
         <canvas id="draw-canvas"></canvas>
         <div id="draw-cursor-dot"></div>
       </div>
-      <p style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-secondary);line-height:1.7;margin:0;">
-        ✦ Paint directly on the 3D model — strokes appear in real time.<br>
-        Use the UV map preview below as a reference.
-      </p>
       <div class="section-title">Tool</div>
       <div class="draw-tool-row">
         <button class="draw-tool-btn active" data-tool="brush" title="Brush">
@@ -445,6 +532,14 @@
 <!-- 3D draw cursor overlay -->
 <div id="cursor-3d"></div>
 
+<script>
+  // Fetch the remove.bg API key from the server — key never appears in this file.
+  window.RMBG_API_KEY = '';
+  fetch('/config')
+    .then(r => r.json())
+    .then(cfg => { window.RMBG_API_KEY = cfg.rmbgApiKey || ''; })
+    .catch(() => {}); // silently ignore if no server (e.g. opened as file://)
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <!-- Load modules in dependency order (no bundler needed) -->
 <script src="js/scene.js"></script>
@@ -456,5 +551,62 @@
 <script src="js/ui.js"></script>
 <script src="js/model-loader.js"></script>
 <script src="js/main.js"></script>
+<script>
+// ── Panel hint collapse/expand with localStorage persistence ──
+(function() {
+  const STORE_KEY = 'mehendi_hint_collapsed';
+
+  // Load saved state
+  let collapsed = {};
+  try { collapsed = JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch(e) {}
+
+  function applyState(btn, hint, id) {
+    const isCollapsed = !!collapsed[id];
+    hint.classList.toggle('collapsed', isCollapsed);
+    btn.classList.toggle('collapsed', isCollapsed);
+  }
+
+  function saveState() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(collapsed)); } catch(e) {}
+  }
+
+  document.querySelectorAll('.panel-hint-toggle').forEach(btn => {
+    const id = btn.dataset.hint;
+    const hint = document.getElementById(id);
+    if (!hint) return;
+
+    applyState(btn, hint, id);
+
+    btn.addEventListener('click', () => {
+      collapsed[id] = !collapsed[id];
+      applyState(btn, hint, id);
+      saveState();
+    });
+  });
+})();
+
+// ── Dark / Light mode toggle ──────────────────────────────
+window.toggleTheme = function() {
+  const isDark = document.body.classList.toggle('dark');
+  const tip = document.getElementById('theme-tip');
+  if (tip) tip.textContent = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+
+  // Sync Three.js scene background so it matches the CSS bg
+  if (typeof SCENE !== 'undefined' && SCENE.renderer && SCENE.scene) {
+    const bg = isDark ? 0x111111 : 0xffffff;
+    SCENE.scene.background = new THREE.Color(bg);
+    SCENE.renderer.setClearColor(bg, 1);
+  }
+
+  try { localStorage.setItem('mehendi_dark', isDark ? '1' : '0'); } catch(e) {}
+};
+
+// Restore saved theme on load
+(function() {
+  let saved;
+  try { saved = localStorage.getItem('mehendi_dark'); } catch(e) {}
+  if (saved === '1') window.toggleTheme();
+})();
+</script>
 </body>
 </html>

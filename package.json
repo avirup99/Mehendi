@@ -1,0 +1,16 @@
+{
+  "name": "mehendi-viewer",
+  "version": "1.0.0",
+  "description": "3D hand viewer with mehendi UV designer",
+  "scripts": {
+    "serve": "npx serve .",
+    "start": "node server.js"
+  },
+  "main": "server.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  }
+}

@@ -7,15 +7,14 @@ const UI = (() => {
   const headTitle = document.getElementById('panel-head-title');
 
   const PANELS = {
-    skeleton: { label: 'Skeleton',     content: 'content-skeleton' },
-    scene:    { label: 'Scene',        content: 'content-scene'    },
-    uv:       { label: 'UV Designer',  content: 'content-uv'       },
-    draw:     { label: 'Draw',         content: 'content-draw'     },
-    models:   { label: 'Load Model',   content: 'content-models'   },
+    skeleton: { label: 'Pose',       content: 'content-skeleton' },
+    scene:    { label: 'Lighting',   content: 'content-scene'    },
+    uv:       { label: 'Design',     content: 'content-uv'       },
+    draw:     { label: 'Draw',       content: 'content-draw'     },
+    models:   { label: 'Load Model', content: 'content-models'  },
   };
 
   let activePanel = null;
-  let pinned      = false;
 
   function showContent(name) {
     Object.values(PANELS).forEach(p => {
@@ -69,19 +68,12 @@ const UI = (() => {
   document.querySelectorAll('.strip-btn[data-panel]').forEach(btn => {
     btn.addEventListener('click', () => {
       const name = btn.dataset.panel;
-      if (activePanel === name && !pinned) closePanel();
+      if (activePanel === name) closePanel();
       else openPanel(name);
     });
   });
 
-  // Pin
-  const stripPin = document.getElementById('strip-pin');
-  const pinTip   = document.getElementById('pin-tip');
-  stripPin.addEventListener('click', () => {
-    pinned = !pinned;
-    stripPin.classList.toggle('active', pinned);
-    pinTip.textContent = pinned ? 'Unpin panel' : 'Pin panel open';
-  });
+  // (pin button removed)
 
   // Drawer resize
   const drawerResize = document.getElementById('drawer-resize');
@@ -95,7 +87,7 @@ const UI = (() => {
   });
   window.addEventListener('mousemove', (e) => {
     if (!drawerDragging) return;
-    drawer.style.width = Math.max(180, Math.min(480, e.clientX - 44)) + 'px';
+    drawer.style.width = Math.max(180, Math.min(700, e.clientX - 44)) + 'px';
   });
   window.addEventListener('mouseup', () => {
     if (!drawerDragging) return;

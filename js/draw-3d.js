@@ -303,44 +303,90 @@ const DRAW = (() => {
   let cursorCanvas = null, cursorCtx = null;
   let _cursorPt = null, _cursorActive = false;
 
-  function getDrawCtx1024() { return _drawCtx1024; }
-  function getPenType() { return _penType; }
+  // ── Stroke layer system ───────────────────────────────────
+  // Each completed stroke is stored as a full 1024×1024 offscreen canvas.
+  // _activeStrokeCanvas is drawn into live during a stroke gesture.
+  // On mouseup it becomes a new layer in _strokeLayers.
+  // _selectedIdx points to the layer being transformed (-1 = none).
+  // When drawing starts on blank space (no hit), a new stroke begins.
+  // Flatten commits all layers into _drawCtx1024.
 
-  // ── Undo/Redo ─────────────────────────────────────────────
-  // IMPORTANT: _drawCtx1024 is the single source of truth (1024×1024 offscreen).
-  // Never copy drawCanvas back into it — that resamples and blurs every stroke.
-  // All painting goes directly to _drawCtx1024; drawPreview() only reads from it.
+  let _strokeLayers   = [];  // [{ canvas, x, y, w, h, rot, scaleX, scaleY }]
+  let _selectedIdx    = -1;
+  let _activeStrokeCanvas = null; // offscreen canvas for the stroke in progress
+  let _activeStrokeCtx    = null;
+  let _activeStrokeBBox   = null; // { minX, minY, maxX, maxY } in 1024 space (for hit-testing only)
+  let _handleState    = null;     // { mode, ...drag start data }
+  let handleCanvas    = null;     // overlay for transform handles
+  let handleCtx       = null;
+
+  const H_R = 7; // handle circle radius
+
+  function getDrawCtx1024() { return _drawCtx1024; }
+  function getPenType()     { return _penType; }
+
+  // ── Undo/Redo (snapshots include stroke layers) ───────────
+  function _layersSnapshot() {
+    return _strokeLayers.map(l => ({
+      dataUrl: l.canvas.toDataURL(),
+      x: l.x, y: l.y, w: l.w, h: l.h,
+      rot: l.rot, scaleX: l.scaleX, scaleY: l.scaleY,
+    }));
+  }
+
   function saveSnapshot() {
     if (!_drawCtx1024) return;
-    _undoStack.push(_drawCtx1024.getImageData(0, 0, 1024, 1024));
+    _undoStack.push({
+      img: _drawCtx1024.getImageData(0, 0, 1024, 1024),
+      layers: _layersSnapshot(),
+      sel: _selectedIdx,
+    });
     if (_undoStack.length > MAX_UNDO) _undoStack.shift();
     _redoStack = [];
     _refreshUndoButtons();
   }
 
+  function _restoreSnapshot(snap) {
+    _drawCtx1024.putImageData(snap.img, 0, 0);
+    _strokeLayers = snap.layers.map(s => {
+      const c = document.createElement('canvas');
+      c.width = 1024; c.height = 1024;
+      const img = new Image();
+      img.src = s.dataUrl;
+      const cx = c.getContext('2d');
+      img.onload = () => { cx.drawImage(img, 0, 0); _scheduleRender(); };
+      return { canvas: c, ctx: cx, x: s.x, y: s.y, w: s.w, h: s.h,
+               rot: s.rot, scaleX: s.scaleX, scaleY: s.scaleY };
+    });
+    _selectedIdx = snap.sel;
+  }
+
   function undo() {
     if (!_undoStack.length || !_drawCtx1024) return;
-    _redoStack.push(_drawCtx1024.getImageData(0, 0, 1024, 1024));
-    _drawCtx1024.putImageData(_undoStack.pop(), 0, 0);
+    _redoStack.push({ img: _drawCtx1024.getImageData(0,0,1024,1024), layers: _layersSnapshot(), sel: _selectedIdx });
+    _restoreSnapshot(_undoStack.pop());
+    _flushToCtx1024();
     if (_onComposite) _onComposite();
-    drawPreview(); _refreshUndoButtons();
+    _scheduleRender(); _refreshUndoButtons();
   }
 
   function redo() {
     if (!_redoStack.length || !_drawCtx1024) return;
-    _undoStack.push(_drawCtx1024.getImageData(0, 0, 1024, 1024));
-    _drawCtx1024.putImageData(_redoStack.pop(), 0, 0);
+    _undoStack.push({ img: _drawCtx1024.getImageData(0,0,1024,1024), layers: _layersSnapshot(), sel: _selectedIdx });
+    _restoreSnapshot(_redoStack.pop());
+    _flushToCtx1024();
     if (_onComposite) _onComposite();
-    drawPreview(); _refreshUndoButtons();
+    _scheduleRender(); _refreshUndoButtons();
   }
 
   function clearAll() {
     if (!_drawCtx1024) return;
     saveSnapshot();
     _drawCtx1024.clearRect(0, 0, 1024, 1024);
+    _strokeLayers = []; _selectedIdx = -1;
     if (drawCtx && drawCanvas) drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
     if (_onComposite) _onComposite();
-    drawPreview(); _refreshUndoButtons();
+    _scheduleRender(); _refreshUndoButtons();
   }
 
   function _refreshUndoButtons() {
@@ -348,6 +394,34 @@ const DRAW = (() => {
     const r = document.getElementById('draw-redo-btn');
     if (u) u.disabled = _undoStack.length === 0;
     if (r) r.disabled = _redoStack.length === 0;
+  }
+
+  // ── Flatten stroke layers into _drawCtx1024 ───────────────
+  // Called when a stroke is committed (mouseup after transform or eraser).
+  function _flushToCtx1024() {
+    if (!_drawCtx1024) return;
+    _drawCtx1024.clearRect(0, 0, 1024, 1024);
+    _strokeLayers.forEach(l => _renderLayerToCtx(_drawCtx1024, l, 1024));
+  }
+
+  // ── Render a layer canvas to a target context ─────────────
+  // Each layer canvas is always full 1024×1024 with strokes painted
+  // directly in 1024-space. We draw it at the full output size so
+  // stroke widths are never rescaled by the bounding-box crop.
+  // scaleX/scaleY/rot are user-applied transforms (move/scale/rotate handles).
+  function _renderLayerToCtx(ctx, l, size) {
+    const scl = size / 1024;
+    // Centre of the bounding box in output-canvas space
+    const cx = (l.x + l.w / 2) * scl;
+    const cy = (l.y + l.h / 2) * scl;
+    ctx.save();
+    // Translate to bbox centre, apply user rotation/scale, then draw
+    // the full canvas offset so its bbox centre lands at (0,0)
+    ctx.translate(cx, cy);
+    ctx.rotate(l.rot);
+    ctx.scale(l.scaleX, l.scaleY);
+    ctx.drawImage(l.canvas, -cx / l.scaleX, -cy / l.scaleY, size / l.scaleX, size / l.scaleY);
+    ctx.restore();
   }
 
   // ── Wire ──────────────────────────────────────────────────
@@ -368,11 +442,111 @@ const DRAW = (() => {
     wireCtx.restore();
   }
 
+  // ── Main render: flattened base + active stroke + handles ──
   function drawPreview() {
     if (!drawCtx || !drawCanvas || !_drawCtx1024) return;
     const s = drawCanvas.width;
     drawCtx.clearRect(0, 0, s, s);
-    drawCtx.drawImage(_drawCtx1024.canvas, 0, 0, s, s);
+
+    // Committed flat layers
+    _strokeLayers.forEach(l => _renderLayerToCtx(drawCtx, l, s));
+
+    // Active stroke being drawn right now
+    if (_activeStrokeCanvas) {
+      drawCtx.save();
+      drawCtx.drawImage(_activeStrokeCanvas, 0, 0, s, s);
+      drawCtx.restore();
+    }
+
+    // Handles for selected layer
+    if (_selectedIdx >= 0 && _selectedIdx < _strokeLayers.length) {
+      _drawHandles(_strokeLayers[_selectedIdx], s);
+    }
+  }
+
+  // ── Handle drawing ────────────────────────────────────────
+  function _drawHandles(l, s) {
+    if (!drawCtx) return;
+    const scl = s / 1024;
+    const cx = (l.x + l.w / 2) * scl;
+    const cy = (l.y + l.h / 2) * scl;
+    const hw = (l.w / 2) * scl * l.scaleX;
+    const hh = (l.h / 2) * scl * l.scaleY;
+
+    drawCtx.save();
+    drawCtx.translate(cx, cy);
+    drawCtx.rotate(l.rot);
+
+    // Dashed bounding box
+    drawCtx.strokeStyle = 'rgba(10,10,10,0.7)';
+    drawCtx.lineWidth = 1.2;
+    drawCtx.setLineDash([4, 3]);
+    drawCtx.strokeRect(-hw, -hh, hw * 2, hh * 2);
+    drawCtx.setLineDash([]);
+
+    // Corner scale handles
+    [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].forEach(([x,y]) => {
+      drawCtx.beginPath();
+      drawCtx.arc(x, y, H_R, 0, Math.PI * 2);
+      drawCtx.fillStyle = '#fff';
+      drawCtx.fill();
+      drawCtx.strokeStyle = '#0a0a0a';
+      drawCtx.lineWidth = 1.5;
+      drawCtx.stroke();
+    });
+
+    // Rotate handle (top centre)
+    const rotY = -hh - 22;
+    drawCtx.beginPath();
+    drawCtx.moveTo(0, -hh);
+    drawCtx.lineTo(0, rotY + H_R);
+    drawCtx.strokeStyle = 'rgba(10,10,10,0.4)';
+    drawCtx.lineWidth = 1;
+    drawCtx.stroke();
+    drawCtx.beginPath();
+    drawCtx.arc(0, rotY, H_R, 0, Math.PI * 2);
+    drawCtx.fillStyle = '#0a0a0a';
+    drawCtx.fill();
+
+    // Delete handle (top-right corner, red X)
+    const delX = hw + 14, delY = -hh - 14;
+    drawCtx.beginPath();
+    drawCtx.arc(delX, delY, H_R, 0, Math.PI * 2);
+    drawCtx.fillStyle = '#e33';
+    drawCtx.fill();
+    drawCtx.strokeStyle = '#fff';
+    drawCtx.lineWidth = 1.5;
+    drawCtx.beginPath();
+    drawCtx.moveTo(delX - 3.5, delY - 3.5); drawCtx.lineTo(delX + 3.5, delY + 3.5);
+    drawCtx.moveTo(delX + 3.5, delY - 3.5); drawCtx.lineTo(delX - 3.5, delY + 3.5);
+    drawCtx.stroke();
+
+    drawCtx.restore();
+  }
+
+  // ── Hit testing ───────────────────────────────────────────
+  function _hitTest(px, py, l, s) {
+    const scl   = s / 1024;
+    const cx    = (l.x + l.w / 2) * scl;
+    const cy    = (l.y + l.h / 2) * scl;
+    const hw    = (l.w / 2) * scl * l.scaleX;
+    const hh    = (l.h / 2) * scl * l.scaleY;
+    const cos   = Math.cos(-l.rot), sin = Math.sin(-l.rot);
+    const dx    = px - cx, dy = py - cy;
+    const lx    = dx * cos - dy * sin;
+    const ly    = dx * sin + dy * cos;
+    const rotY  = -hh - 22;
+    const delX  = hw + 14, delY = -hh - 14;
+
+    if (Math.hypot(lx - delX, ly - delY) < H_R + 5) return { mode: 'delete' };
+    if (Math.hypot(lx, ly - rotY)        < H_R + 5) return { mode: 'rotate' };
+    const corners = [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]];
+    for (let i = 0; i < 4; i++) {
+      if (Math.hypot(lx - corners[i][0], ly - corners[i][1]) < H_R + 6)
+        return { mode: 'scale', ci: i };
+    }
+    if (lx >= -hw && lx <= hw && ly >= -hh && ly <= hh) return { mode: 'move' };
+    return null;
   }
 
   // ── Resize ────────────────────────────────────────────────
@@ -383,8 +557,8 @@ const DRAW = (() => {
     const sh = Math.round(rect.height);
     if (sw === 0 || sh === 0) return;
     _side = sw;
-    wireCanvas.width  = sw; wireCanvas.height  = sh;
-    drawCanvas.width  = sw; drawCanvas.height  = sh;
+    wireCanvas.width  = sw; wireCanvas.height = sh;
+    drawCanvas.width  = sw; drawCanvas.height = sh;
     if (cursorCanvas) { cursorCanvas.width = sw; cursorCanvas.height = sh; }
     drawWire(); drawPreview(); _drawCursor();
   }
@@ -398,7 +572,6 @@ const DRAW = (() => {
     };
   }
 
-  // Map canvas pixel → 1024px UV space
   function _canvasTo1024(pt) {
     return {
       x: pt.x * (1024 / drawCanvas.width),
@@ -423,35 +596,26 @@ const DRAW = (() => {
     cursorCtx.save();
     cursorCtx.beginPath();
     cursorCtx.arc(_cursorPt.x, _cursorPt.y, r, 0, Math.PI * 2);
-
-    // Pen-type specific cursor styling
     if (_tool === 'eraser') {
       cursorCtx.strokeStyle = 'rgba(255,60,60,0.85)';
       cursorCtx.lineWidth = 1.5;
     } else if (_penType === 'ink') {
-      cursorCtx.strokeStyle = _color;
-      cursorCtx.lineWidth = 1;
-      // Crosshair for precision ink
+      cursorCtx.strokeStyle = _color; cursorCtx.lineWidth = 1;
       cursorCtx.moveTo(_cursorPt.x - r - 4, _cursorPt.y);
       cursorCtx.lineTo(_cursorPt.x + r + 4, _cursorPt.y);
       cursorCtx.moveTo(_cursorPt.x, _cursorPt.y - r - 4);
       cursorCtx.lineTo(_cursorPt.x, _cursorPt.y + r + 4);
     } else if (_penType === 'spray') {
       cursorCtx.strokeStyle = hexAlpha(_color, 0.6);
-      cursorCtx.lineWidth = 1;
-      cursorCtx.setLineDash([3, 3]);
+      cursorCtx.lineWidth = 1; cursorCtx.setLineDash([3, 3]);
     } else if (_penType === 'marker') {
-      cursorCtx.strokeStyle = hexAlpha(_color, 0.7);
-      cursorCtx.lineWidth = 2;
+      cursorCtx.strokeStyle = hexAlpha(_color, 0.7); cursorCtx.lineWidth = 2;
     } else if (_penType === 'calligraphy') {
-      cursorCtx.strokeStyle = _color;
-      cursorCtx.lineWidth = 1;
+      cursorCtx.strokeStyle = _color; cursorCtx.lineWidth = 1;
     } else {
-      cursorCtx.strokeStyle = _color;
-      cursorCtx.lineWidth = 1.5;
+      cursorCtx.strokeStyle = _color; cursorCtx.lineWidth = 1.5;
     }
     cursorCtx.stroke();
-
     if (_cursorActive) {
       cursorCtx.setLineDash([]);
       cursorCtx.globalAlpha = _penType === 'marker' ? 0.08 : 0.14;
@@ -466,60 +630,156 @@ const DRAW = (() => {
   function _hideCursor() { _cursorPt = null; _cursorActive = false; _drawCursor(); }
   function hideCursorDot() { if (cursorDot) cursorDot.style.opacity = '0'; }
 
-  // ── Paint directly into _drawCtx1024 (1024×1024, always) ──
-  // Never touches drawCanvas — drawPreview() is the only reader of _drawCtx1024.
+  // ── Paint into active stroke offscreen canvas ─────────────
+  function _ensureActiveStroke() {
+    if (_activeStrokeCanvas) return;
+    _activeStrokeCanvas = document.createElement('canvas');
+    _activeStrokeCanvas.width = 1024; _activeStrokeCanvas.height = 1024;
+    _activeStrokeCtx = _activeStrokeCanvas.getContext('2d');
+    _activeStrokeBBox = { minX: 1024, minY: 1024, maxX: 0, maxY: 0 };
+  }
+
+  function _expandBBox(pt1024) {
+    if (!_activeStrokeBBox) return;
+    const pad = Math.max(_size, _eraserSize) + 4;
+    _activeStrokeBBox.minX = Math.min(_activeStrokeBBox.minX, pt1024.x - pad);
+    _activeStrokeBBox.minY = Math.min(_activeStrokeBBox.minY, pt1024.y - pad);
+    _activeStrokeBBox.maxX = Math.max(_activeStrokeBBox.maxX, pt1024.x + pad);
+    _activeStrokeBBox.maxY = Math.max(_activeStrokeBBox.maxY, pt1024.y + pad);
+  }
+
   function paintAt(ptA, ptB, speed) {
     if (!_drawCtx1024) return;
 
-    const a1 = _canvasTo1024(ptA);
-    const b1 = _canvasTo1024(ptB || ptA);
-    const displaySize = _size * (1024 / (drawCanvas ? drawCanvas.width : 1024));
-
     if (_tool === 'eraser') {
-      PEN_ENGINE.eraser(_drawCtx1024, a1, b1, _eraserSize);
+      // Eraser works directly on the flattened layers
+      const a1 = _canvasTo1024(ptA);
+      const b1 = _canvasTo1024(ptB || ptA);
+      // Apply eraser to each stroke layer canvas
+      _strokeLayers.forEach(l => {
+        PEN_ENGINE.eraser(l.ctx, a1, b1, _eraserSize);
+      });
+      _flushToCtx1024();
       return;
     }
 
+    _ensureActiveStroke();
+    const a1 = _canvasTo1024(ptA);
+    const b1 = _canvasTo1024(ptB || ptA);
+
+    // Paint directly in 1024-space — no scaling by display canvas size.
+    // The layer canvas is always 1024×1024 and rendered at full size,
+    // so _size is already in the correct coordinate space.
     switch (_penType) {
-      case 'ink':
-        PEN_ENGINE.ink(_drawCtx1024, a1, b1, _color, displaySize, _opacity, speed || 0);
-        break;
-      case 'spray':
-        PEN_ENGINE.spray(_drawCtx1024, b1, _color, displaySize, _opacity);
-        break;
-      case 'marker':
-        PEN_ENGINE.marker(_drawCtx1024, a1, b1, _color, displaySize, _opacity);
-        break;
-      case 'calligraphy':
-        PEN_ENGINE.calligraphy(_drawCtx1024, a1, b1, _color, displaySize, _opacity);
-        break;
-      default:
-        PEN_ENGINE.brush(_drawCtx1024, a1, b1, _color, displaySize, _opacity);
+      case 'ink':        PEN_ENGINE.ink(_activeStrokeCtx, a1, b1, _color, _size, _opacity, speed || 0); break;
+      case 'spray':      PEN_ENGINE.spray(_activeStrokeCtx, b1, _color, _size, _opacity); break;
+      case 'marker':     PEN_ENGINE.marker(_activeStrokeCtx, a1, b1, _color, _size, _opacity); break;
+      case 'calligraphy':PEN_ENGINE.calligraphy(_activeStrokeCtx, a1, b1, _color, _size, _opacity); break;
+      default:           PEN_ENGINE.brush(_activeStrokeCtx, a1, b1, _color, _size, _opacity);
     }
+    _expandBBox(b1);
   }
 
-  // scheduleComposite: on each RAF, sync display canvas from _drawCtx1024
-  // then trigger the 3D texture composite. One drawPreview per frame max.
-  function scheduleComposite() {
+  // ── Commit active stroke as a new layer ───────────────────
+  function _commitStroke() {
+    if (!_activeStrokeCanvas || !_activeStrokeBBox) return;
+    const bb = _activeStrokeBBox;
+    bb.minX = Math.max(0, Math.floor(bb.minX));
+    bb.minY = Math.max(0, Math.floor(bb.minY));
+    bb.maxX = Math.min(1024, Math.ceil(bb.maxX));
+    bb.maxY = Math.min(1024, Math.ceil(bb.maxY));
+    if (bb.maxX <= bb.minX || bb.maxY <= bb.minY) {
+      _activeStrokeCanvas = null; _activeStrokeCtx = null; _activeStrokeBBox = null;
+      return;
+    }
+
+    // Store the full 1024×1024 canvas as the layer — bounding box is
+    // kept only for hit-testing and handle positioning, not for rendering.
+    _strokeLayers.push({
+      canvas: _activeStrokeCanvas,
+      ctx: _activeStrokeCtx,
+      x: bb.minX, y: bb.minY,
+      w: bb.maxX - bb.minX, h: bb.maxY - bb.minY,
+      rot: 0, scaleX: 1, scaleY: 1,
+    });
+    _selectedIdx = _strokeLayers.length - 1;
+    _activeStrokeCanvas = null; _activeStrokeCtx = null; _activeStrokeBBox = null;
+    _flushToCtx1024();
+  }
+
+  // ── RAF-throttled render ──────────────────────────────────
+  function _scheduleRender() {
     if (_rafPending) return;
     _rafPending = true;
     requestAnimationFrame(() => {
-      drawPreview();           // _drawCtx1024 → display canvas (read-only)
+      drawPreview();
       if (_onComposite) _onComposite();
       _rafPending = false;
     });
   }
 
+  function scheduleComposite() { _scheduleRender(); }
+
   // ── Pointer handlers (2D) ─────────────────────────────────
   function onDown(e) {
     if (_drawMode !== '2d') return;
     e.preventDefault(); e.stopPropagation();
-    saveSnapshot();
     const { clientX, clientY } = _eventCoords(e);
     const pt = _clientToCanvas(clientX, clientY);
+    const s  = drawCanvas.width;
+
+    // Check handle hit on selected layer first
+    if (_selectedIdx >= 0) {
+      const hit = _hitTest(pt.x, pt.y, _strokeLayers[_selectedIdx], s);
+      if (hit) {
+        if (hit.mode === 'delete') {
+          saveSnapshot();
+          _strokeLayers.splice(_selectedIdx, 1);
+          _selectedIdx = -1;
+          _flushToCtx1024();
+          _scheduleRender();
+          return;
+        }
+        const l = _strokeLayers[_selectedIdx];
+        const scl = s / 1024;
+        const cx = (l.x + l.w / 2) * scl;
+        const cy = (l.y + l.h / 2) * scl;
+        if (hit.mode === 'move') {
+          _handleState = { mode: 'move', sx: pt.x, sy: pt.y, ox: l.x, oy: l.y };
+        } else if (hit.mode === 'scale') {
+          _handleState = { mode: 'scale', cx, cy, origSX: l.scaleX, origSY: l.scaleY,
+                           refDist: Math.hypot(pt.x - cx, pt.y - cy) };
+        } else if (hit.mode === 'rotate') {
+          _handleState = { mode: 'rotate', cx, cy,
+                           refAngle: Math.atan2(pt.y - cy, pt.x - cx), origRot: l.rot };
+        }
+        saveSnapshot();
+        return;
+      }
+    }
+
+    // Check hit on any other layer (select it)
+    for (let i = _strokeLayers.length - 1; i >= 0; i--) {
+      const hit = _hitTest(pt.x, pt.y, _strokeLayers[i], s);
+      if (hit && hit.mode === 'move') {
+        _selectedIdx = i;
+        const l = _strokeLayers[i];
+        const scl = s / 1024;
+        const cx = (l.x + l.w / 2) * scl;
+        const cy = (l.y + l.h / 2) * scl;
+        _handleState = { mode: 'move', sx: pt.x, sy: pt.y, ox: l.x, oy: l.y };
+        saveSnapshot();
+        _scheduleRender();
+        return;
+      }
+    }
+
+    // No hit — deselect and begin a new stroke
+    _selectedIdx = -1;
+    saveSnapshot();
     _isDrawing = true; _lastPt = pt; _lastSpeed = 0;
     paintAt(pt, pt, 0);
-    scheduleComposite();
+    _scheduleRender();
     _cursorPt = pt; _cursorActive = true; _drawCursor();
   }
 
@@ -527,34 +787,90 @@ const DRAW = (() => {
     if (_drawMode !== '2d') return;
     const { clientX, clientY } = _eventCoords(e);
     const pt = _clientToCanvas(clientX, clientY);
+    const s  = drawCanvas.width;
+
+    // Handle transform drag
+    if (_handleState && _selectedIdx >= 0) {
+      e.preventDefault();
+      const l = _strokeLayers[_selectedIdx];
+      const scl = s / 1024;
+      if (_handleState.mode === 'move') {
+        const dx = (pt.x - _handleState.sx) / scl;
+        const dy = (pt.y - _handleState.sy) / scl;
+        l.x = Math.max(-l.w * 0.9, Math.min(1024 - l.w * 0.1, _handleState.ox + dx));
+        l.y = Math.max(-l.h * 0.9, Math.min(1024 - l.h * 0.1, _handleState.oy + dy));
+      } else if (_handleState.mode === 'scale') {
+        const dist = Math.hypot(pt.x - _handleState.cx, pt.y - _handleState.cy);
+        const ratio = dist / Math.max(0.001, _handleState.refDist);
+        l.scaleX = Math.max(0.05, Math.min(8, _handleState.origSX * ratio));
+        l.scaleY = Math.max(0.05, Math.min(8, _handleState.origSY * ratio));
+      } else if (_handleState.mode === 'rotate') {
+        const angle = Math.atan2(pt.y - _handleState.cy, pt.x - _handleState.cx);
+        l.rot = _handleState.origRot + (angle - _handleState.refAngle);
+      }
+      _flushToCtx1024();
+      _scheduleRender();
+      return;
+    }
+
     if (!_isDrawing) {
+      // Update cursor and show appropriate cursor style
+      let overHandle = false;
+      if (_selectedIdx >= 0) {
+        const hit = _hitTest(pt.x, pt.y, _strokeLayers[_selectedIdx], s);
+        if (hit) {
+          overHandle = true;
+          cursorCanvas.style.cursor = hit.mode === 'rotate' ? 'crosshair'
+            : hit.mode === 'scale' ? 'nwse-resize'
+            : hit.mode === 'delete' ? 'pointer'
+            : 'grab';
+        }
+      }
+      if (!overHandle) {
+        let overLayer = false;
+        for (let i = _strokeLayers.length - 1; i >= 0; i--) {
+          const hit = _hitTest(pt.x, pt.y, _strokeLayers[i], s);
+          if (hit && hit.mode === 'move') { overLayer = true; break; }
+        }
+        cursorCanvas.style.cursor = overLayer ? 'grab' : 'none';
+      }
       _cursorPt = pt; _cursorActive = false; _drawCursor();
       return;
     }
+
     e.preventDefault();
     const speed = _lastPt ? Math.hypot(pt.x - _lastPt.x, pt.y - _lastPt.y) : 0;
     _lastSpeed = speed;
     paintAt(_lastPt || pt, pt, speed);
     _lastPt = pt;
-    scheduleComposite();
+    _scheduleRender();
     _cursorPt = pt; _cursorActive = true; _drawCursor();
   }
 
   function onUp() {
+    if (_handleState) {
+      _handleState = null;
+      _flushToCtx1024();
+      _scheduleRender();
+      return;
+    }
     if (_isDrawing) {
-      drawPreview();
+      _commitStroke();
+      _isDrawing = false; _lastPt = null; _lastSpeed = 0;
+      _cursorActive = false; _drawCursor();
+      _scheduleRender();
       if (_onComposite) _onComposite();
     }
-    _isDrawing = false; _lastPt = null; _lastSpeed = 0;
-    _cursorActive = false; _drawCursor();
   }
 
   function onLeave() {
     if (_isDrawing) {
-      drawPreview();
+      _commitStroke();
+      _isDrawing = false; _lastPt = null;
+      _scheduleRender();
       if (_onComposite) _onComposite();
     }
-    _isDrawing = false; _lastPt = null;
+    _handleState = null;
     _hideCursor(); hideCursorDot();
   }
 
@@ -583,7 +899,7 @@ const DRAW = (() => {
     const hint = document.createElement('p');
     hint.id = 'draw-mode-hint';
     hint.style.cssText = "font-family:'DM Mono',monospace;font-size:9px;color:var(--text-secondary);line-height:1.7;margin:0;";
-    hint.textContent = 'Paint on the UV map below — strokes appear on the 3D model.';
+    hint.textContent = 'Paint on the UV map — click a stroke to move/resize/rotate it.';
 
     ['2d', '3d'].forEach(m => {
       const btn = document.createElement('button');
@@ -608,7 +924,7 @@ const DRAW = (() => {
     });
     const hint = document.getElementById('draw-mode-hint');
     if (hint) hint.textContent = m === '2d'
-      ? 'Paint on the UV map below — strokes appear on the 3D model.'
+      ? 'Paint on the UV map — click a stroke to move/resize/rotate it.'
       : 'Paint directly on the 3D model in the viewport.';
 
     const cvWrap = document.getElementById('draw-canvas-wrap');
@@ -664,17 +980,12 @@ const DRAW = (() => {
 
   // ── Sync UI ───────────────────────────────────────────────
   function syncUI() {
-    // Tool buttons (brush/eraser)
     document.querySelectorAll('.draw-tool-btn[data-tool]').forEach(btn => {
       btn.addEventListener('click', () => setTool(btn.dataset.tool));
     });
-
-    // Pen type buttons
     document.querySelectorAll('.draw-pen-btn').forEach(btn => {
       btn.addEventListener('click', () => setPenType(btn.dataset.pen));
     });
-
-    // Color swatches
     document.querySelectorAll('.draw-swatch:not(.draw-swatch-custom)').forEach(sw => {
       sw.addEventListener('click', () => {
         _color = sw.dataset.color;
@@ -690,7 +1001,6 @@ const DRAW = (() => {
       document.querySelectorAll('.draw-swatch').forEach(s => s.classList.remove('active'));
       picker.closest('.draw-swatch')?.classList.add('active');
     });
-
     const sizeEl = document.getElementById('draw-size');
     if (sizeEl) sizeEl.addEventListener('input', e => {
       _size = parseFloat(e.target.value);
@@ -711,7 +1021,6 @@ const DRAW = (() => {
     if (wireChk) wireChk.addEventListener('change', e => { _wireVis = e.target.checked; drawWire(); });
     const pressChk = document.getElementById('draw-pressure-check');
     if (pressChk) pressChk.addEventListener('change', e => { _pressure = e.target.checked; });
-
     const undoBtn  = document.getElementById('draw-undo-btn');
     const redoBtn  = document.getElementById('draw-redo-btn');
     const clearBtn = document.getElementById('draw-clear-btn');
@@ -749,15 +1058,10 @@ const DRAW = (() => {
       btn.classList.toggle('active', btn.dataset.pen === name);
     });
     DRAW3D.setPenType(name);
-
-    // Update description chip
     const descEl = document.getElementById('pen-desc');
     if (descEl) {
       descEl.style.opacity = '0';
-      setTimeout(() => {
-        descEl.textContent = PEN_DESCRIPTIONS[name] || '';
-        descEl.style.opacity = '1';
-      }, 80);
+      setTimeout(() => { descEl.textContent = PEN_DESCRIPTIONS[name] || ''; descEl.style.opacity = '1'; }, 80);
     }
   }
 
@@ -797,7 +1101,7 @@ const DRAW = (() => {
 
   return {
     init, setEdges, resizePreview, drawWire, drawPreview,
-    saveSnapshot, undo, redo, clearAll, 
+    saveSnapshot, undo, redo, clearAll,
     getDrawCtx1024, getPenType,
   };
 })();

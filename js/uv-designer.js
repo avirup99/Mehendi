@@ -422,8 +422,115 @@ const UV_DESIGNER = (() => {
       drawWire();
     });
 
-    // Upload
-    document.getElementById('uv-upload-input').addEventListener('change', (e) => {
+    // ── Upload modal state ────────────────────────────────
+    // Key priority: 1) user override (localStorage), 2) server .env key (window.RMBG_API_KEY)
+    const _envKey = (typeof window.RMBG_API_KEY === 'string' && window.RMBG_API_KEY.trim())
+      ? window.RMBG_API_KEY.trim() : '';
+    let _userKey = '';
+    try { _userKey = localStorage.getItem('rmbg_api_key') || ''; } catch(e) {}
+    let _rmbgApiKey = _userKey || _envKey;
+
+    function _keySource() {
+      if (_userKey) return 'user';
+      if (_envKey)  return 'env';
+      return '';
+    }
+
+    const modal       = document.getElementById('uv-upload-modal');
+    const keyRow      = document.getElementById('uv-rmbg-key-row');
+    const statusEl    = document.getElementById('uv-rmbg-status');
+    const apiKeyInp   = document.getElementById('uv-rmbg-api-key');
+    const normalInput = document.getElementById('uv-upload-input');
+    const rmbgInput   = document.getElementById('uv-upload-input-nobg');
+    const _keyBadge   = document.getElementById('uv-rmbg-key-badge');
+
+    // Populate field with user-saved key only (never expose the env key)
+    if (apiKeyInp && _userKey) apiKeyInp.value = _userKey;
+
+    function _refreshKeyBadge() {
+      if (!_keyBadge) return;
+      const src = _keySource();
+      if (src === 'env') {
+        _keyBadge.textContent = '\u{1F511} Using app API key';
+        _keyBadge.style.color = '#2a8a4a';
+      } else if (src === 'user') {
+        _keyBadge.textContent = '\u{1F511} Using your API key';
+        _keyBadge.style.color = 'var(--text-secondary)';
+      } else {
+        _keyBadge.textContent = 'No API key configured';
+        _keyBadge.style.color = '#c00';
+      }
+    }
+
+    function _showModal() {
+      keyRow.style.display   = 'none';
+      statusEl.style.display = 'none';
+      modal.style.display    = 'flex';
+      _refreshKeyBadge();
+    }
+    function _hideModal() {
+      modal.style.display    = 'none';
+      statusEl.style.display = 'none';
+    }
+
+    function _setStatus(msg, isError) {
+      statusEl.textContent   = msg;
+      statusEl.style.color   = isError ? '#c00' : 'var(--text-secondary)';
+      statusEl.style.display = msg ? 'block' : 'none';
+    }
+
+    // Normal upload (no bg removal)
+    document.getElementById('uv-modal-nobg-btn').addEventListener('click', () => {
+      _hideModal();
+      normalInput.click();
+    });
+
+    // Remove bg button
+    document.getElementById('uv-modal-rmbg-btn').addEventListener('click', () => {
+      _rmbgApiKey = _userKey || _envKey;
+      if (_rmbgApiKey) {
+        rmbgInput.click();
+      } else {
+        keyRow.style.display = 'flex';
+        if (apiKeyInp) apiKeyInp.focus();
+      }
+    });
+
+    // Save user key and proceed
+    document.getElementById('uv-rmbg-confirm-btn').addEventListener('click', () => {
+      const entered = apiKeyInp ? apiKeyInp.value.trim() : '';
+      if (!entered && !_envKey) { _setStatus('Please enter your API key.', true); return; }
+      if (entered) {
+        _userKey = entered;
+        try { localStorage.setItem('rmbg_api_key', _userKey); } catch(e) {}
+      }
+      _rmbgApiKey = _userKey || _envKey;
+      keyRow.style.display = 'none';
+      _setStatus('');
+      _refreshKeyBadge();
+      rmbgInput.click();
+    });
+
+    // Clear user key — fall back to env key if available
+    const clearKeyBtn = document.getElementById('uv-rmbg-clear-key-btn');
+    if (clearKeyBtn) clearKeyBtn.addEventListener('click', () => {
+      _userKey = '';
+      try { localStorage.removeItem('rmbg_api_key'); } catch(e) {}
+      if (apiKeyInp) apiKeyInp.value = '';
+      _rmbgApiKey = _envKey;
+      _refreshKeyBadge();
+      _setStatus(_envKey ? 'Switched back to app API key.' : 'Key cleared.', false);
+    });
+
+    if (apiKeyInp) apiKeyInp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('uv-rmbg-confirm-btn').click();
+    });
+
+    document.getElementById('uv-modal-cancel-btn').addEventListener('click', _hideModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) _hideModal(); });
+
+    // ── Normal upload (no bg removal) ────────────────────
+    normalInput.addEventListener('change', (e) => {
       Array.from(e.target.files).forEach(file => {
         const reader = new FileReader();
         reader.onload = (ev) => {
@@ -436,6 +543,103 @@ const UV_DESIGNER = (() => {
         reader.readAsDataURL(file);
       });
       e.target.value = '';
+    });
+
+    // ── Remove.bg upload ──────────────────────────────────
+    rmbgInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      e.target.value = '';
+      if (!files.length) return;
+
+      // Show modal with processing status
+      modal.style.display = 'flex';
+      keyRow.style.display = 'none';
+
+      for (const file of files) {
+        const name = file.name.replace(/\.[^.]+$/, '');
+        _setStatus('Removing background from "' + file.name + '"…', false);
+
+        // Disable option buttons while processing
+        document.getElementById('uv-modal-nobg-btn').disabled = true;
+        document.getElementById('uv-modal-rmbg-btn').disabled = true;
+
+        try {
+          const formData = new FormData();
+          formData.append('image_file', file);
+          formData.append('size', 'auto');
+
+          const res = await fetch('https://api.remove.bg/v1.0/removebg', {
+            method: 'POST',
+            headers: { 'X-Api-Key': _rmbgApiKey },
+            body: formData,
+          });
+
+          if (res.status === 402 || res.status === 429) {
+            _setStatus('API limit reached. Your remove.bg credits are used up. The image has been added without background removal.', true);
+            // Fallback: add original
+            await new Promise(resolve => {
+              const reader = new FileReader();
+              reader.onload = (ev) => {
+                addToHistory(name, ev.target.result);
+                renderHistory();
+                addLayerFromDataUrl(name, ev.target.result);
+                resolve();
+              };
+              reader.readAsDataURL(file);
+            });
+            // Keep modal open so user sees the message
+            document.getElementById('uv-modal-nobg-btn').disabled = false;
+            document.getElementById('uv-modal-rmbg-btn').disabled = false;
+            continue;
+          }
+
+          if (!res.ok) {
+            let errMsg = 'API error (' + res.status + ').';
+            try {
+              const errJson = await res.json();
+              if (errJson.errors && errJson.errors[0]) errMsg = errJson.errors[0].title || errMsg;
+            } catch(err) {}
+            _setStatus(errMsg + ' Image added without bg removal.', true);
+            // Fallback: add original
+            await new Promise(resolve => {
+              const reader = new FileReader();
+              reader.onload = (ev) => {
+                addToHistory(name, ev.target.result);
+                renderHistory();
+                addLayerFromDataUrl(name, ev.target.result);
+                resolve();
+              };
+              reader.readAsDataURL(file);
+            });
+            document.getElementById('uv-modal-nobg-btn').disabled = false;
+            document.getElementById('uv-modal-rmbg-btn').disabled = false;
+            continue;
+          }
+
+          const blob    = await res.blob();
+          const dataUrl = await new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onload = (ev) => resolve(ev.target.result);
+            reader.readAsDataURL(blob);
+          });
+
+          addToHistory(name + ' (no bg)', dataUrl);
+          renderHistory();
+          addLayerFromDataUrl(name + ' (no bg)', dataUrl);
+
+          _setStatus('');
+          document.getElementById('uv-modal-nobg-btn').disabled = false;
+          document.getElementById('uv-modal-rmbg-btn').disabled = false;
+
+        } catch (err) {
+          _setStatus('Network error. Check your connection and try again.', true);
+          document.getElementById('uv-modal-nobg-btn').disabled = false;
+          document.getElementById('uv-modal-rmbg-btn').disabled = false;
+        }
+      }
+
+      // Auto-close modal only if no error
+      if (!statusEl.textContent) _hideModal();
     });
 
     // History clear
@@ -481,9 +685,25 @@ const UV_DESIGNER = (() => {
     _drawOverlayCtx = drawCtx1024;
   }
 
+  function showUploadModal() {
+    const modal   = document.getElementById('uv-upload-modal');
+    const keyRow  = document.getElementById('uv-rmbg-key-row');
+    const statusEl = document.getElementById('uv-rmbg-status');
+    if (!modal) return;
+    keyRow.style.display   = 'none';
+    statusEl.style.display = 'none';
+    // Re-enable buttons in case they were disabled from a previous session
+    const nb = document.getElementById('uv-modal-nobg-btn');
+    const rb = document.getElementById('uv-modal-rmbg-btn');
+    if (nb) nb.disabled = false;
+    if (rb) rb.disabled = false;
+    modal.style.display = 'flex';
+  }
+
   function setEdges(edges) {
     uvEdges = edges;
-    document.getElementById('uv-wire-status').textContent =
+    const statusEl = document.getElementById('uv-wire-status');
+    if (statusEl) statusEl.textContent =
       edges.length ? (edges.length + ' UV edges') : 'No UV data found in model';
     drawWire();
   }
@@ -499,5 +719,5 @@ const UV_DESIGNER = (() => {
   }
 
   // Expose composite so Draw's _onComposite callback can trigger a full re-merge
-  return { init, setEdges, setDrawOverlay, composite, resizePreview, drawWire, clearLayers };
+  return { init, setEdges, setDrawOverlay, composite, resizePreview, drawWire, clearLayers, showUploadModal };
 })();

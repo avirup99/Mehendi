@@ -330,6 +330,10 @@ const DRAW = (() => {
     return _strokeLayers.map(l => ({
       dataUrl: l.canvas.toDataURL(),
       x: l.x, y: l.y, w: l.w, h: l.h,
+      ox: l.ox !== undefined ? l.ox : l.x,
+      oy: l.oy !== undefined ? l.oy : l.y,
+      ow: l.ow !== undefined ? l.ow : l.w,
+      oh: l.oh !== undefined ? l.oh : l.h,
       rot: l.rot, scaleX: l.scaleX, scaleY: l.scaleY,
     }));
   }
@@ -355,7 +359,12 @@ const DRAW = (() => {
       img.src = s.dataUrl;
       const cx = c.getContext('2d');
       img.onload = () => { cx.drawImage(img, 0, 0); _scheduleRender(); };
-      return { canvas: c, ctx: cx, x: s.x, y: s.y, w: s.w, h: s.h,
+      return { canvas: c, ctx: cx,
+               x: s.x, y: s.y, w: s.w, h: s.h,
+               ox: s.ox !== undefined ? s.ox : s.x,
+               oy: s.oy !== undefined ? s.oy : s.y,
+               ow: s.ow !== undefined ? s.ow : s.w,
+               oh: s.oh !== undefined ? s.oh : s.h,
                rot: s.rot, scaleX: s.scaleX, scaleY: s.scaleY };
     });
     _selectedIdx = snap.sel;
@@ -405,22 +414,35 @@ const DRAW = (() => {
   }
 
   // ── Render a layer canvas to a target context ─────────────
-  // Each layer canvas is always full 1024×1024 with strokes painted
-  // directly in 1024-space. We draw it at the full output size so
-  // stroke widths are never rescaled by the bounding-box crop.
-  // scaleX/scaleY/rot are user-applied transforms (move/scale/rotate handles).
+  // Source crop  = ox/oy/ow/oh — the original bbox where the stroke was painted.
+  // Destination  = x/y/w/h    — the current bbox (changed by move/scale/rotate).
+  // This means:
+  //   • Moving  (x/y change)  → stroke renders at new position without any crop shift.
+  //   • Scaling (w/h change)  → stroke content stretches to fill the new bbox.
+  //   • Rotating              → bbox centre stays fixed, stroke rotates around it.
   function _renderLayerToCtx(ctx, l, size) {
     const scl = size / 1024;
-    // Centre of the bounding box in output-canvas space
+    // Current bbox centre in destination space
     const cx = (l.x + l.w / 2) * scl;
     const cy = (l.y + l.h / 2) * scl;
+    // Half-extents of the destination bbox
+    const hw = (l.w / 2) * scl;
+    const hh = (l.h / 2) * scl;
+    // Original bbox — always the source crop (where pixels actually live)
+    const ox = l.ox !== undefined ? l.ox : l.x;
+    const oy = l.oy !== undefined ? l.oy : l.y;
+    const ow = l.ow !== undefined ? l.ow : l.w;
+    const oh = l.oh !== undefined ? l.oh : l.h;
+
     ctx.save();
-    // Translate to bbox centre, apply user rotation/scale, then draw
-    // the full canvas offset so its bbox centre lands at (0,0)
     ctx.translate(cx, cy);
     ctx.rotate(l.rot);
-    ctx.scale(l.scaleX, l.scaleY);
-    ctx.drawImage(l.canvas, -cx / l.scaleX, -cy / l.scaleY, size / l.scaleX, size / l.scaleY);
+    // drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh)
+    ctx.drawImage(
+      l.canvas,
+      ox, oy, ow, oh,         // source: original painted region
+      -hw, -hh, hw * 2, hh * 2 // dest: current (possibly moved/scaled) bbox
+    );
     ctx.restore();
   }
 
@@ -693,13 +715,17 @@ const DRAW = (() => {
       return;
     }
 
-    // Store the full 1024×1024 canvas as the layer — bounding box is
-    // kept only for hit-testing and handle positioning, not for rendering.
+    // Store the full 1024×1024 canvas as the layer.
+    // ox/oy/ow/oh are the ORIGINAL bbox coords where the stroke was actually painted —
+    // used as the fixed source crop in _renderLayerToCtx.
+    // x/y/w/h are the CURRENT bbox and change when the user moves/scales.
+    const origX = bb.minX, origY = bb.minY;
+    const origW = bb.maxX - bb.minX, origH = bb.maxY - bb.minY;
     _strokeLayers.push({
       canvas: _activeStrokeCanvas,
       ctx: _activeStrokeCtx,
-      x: bb.minX, y: bb.minY,
-      w: bb.maxX - bb.minX, h: bb.maxY - bb.minY,
+      x: origX, y: origY, w: origW, h: origH,
+      ox: origX, oy: origY, ow: origW, oh: origH,
       rot: 0, scaleX: 1, scaleY: 1,
     });
     _selectedIdx = _strokeLayers.length - 1;
@@ -747,8 +773,26 @@ const DRAW = (() => {
         if (hit.mode === 'move') {
           _handleState = { mode: 'move', sx: pt.x, sy: pt.y, ox: l.x, oy: l.y };
         } else if (hit.mode === 'scale') {
-          _handleState = { mode: 'scale', cx, cy, origSX: l.scaleX, origSY: l.scaleY,
-                           refDist: Math.hypot(pt.x - cx, pt.y - cy) };
+          // Corners: TL=0, TR=1, BR=2, BL=3 (matching _drawHandles / _hitTest order)
+          // Pin the opposite corner; let the dragged corner move freely.
+          // Compute visual (scaled) bbox corners in 1024-space.
+          const scl2   = s / 1024;
+          const scaledW = l.w * l.scaleX;
+          const scaledH = l.h * l.scaleY;
+          const bx = cx / scl2 - scaledW / 2;
+          const by = cy / scl2 - scaledH / 2;
+          const corners1024 = [
+            { x: bx,           y: by },
+            { x: bx + scaledW, y: by },
+            { x: bx + scaledW, y: by + scaledH },
+            { x: bx,           y: by + scaledH },
+          ];
+          const opp = corners1024[(hit.ci + 2) % 4];
+          _handleState = {
+            mode: 'scale', ci: hit.ci,
+            fixedX: opp.x, fixedY: opp.y,
+            scl: scl2,
+          };
         } else if (hit.mode === 'rotate') {
           _handleState = { mode: 'rotate', cx, cy,
                            refAngle: Math.atan2(pt.y - cy, pt.x - cx), origRot: l.rot };
@@ -800,10 +844,17 @@ const DRAW = (() => {
         l.x = Math.max(-l.w * 0.9, Math.min(1024 - l.w * 0.1, _handleState.ox + dx));
         l.y = Math.max(-l.h * 0.9, Math.min(1024 - l.h * 0.1, _handleState.oy + dy));
       } else if (_handleState.mode === 'scale') {
-        const dist = Math.hypot(pt.x - _handleState.cx, pt.y - _handleState.cy);
-        const ratio = dist / Math.max(0.001, _handleState.refDist);
-        l.scaleX = Math.max(0.05, Math.min(8, _handleState.origSX * ratio));
-        l.scaleY = Math.max(0.05, Math.min(8, _handleState.origSY * ratio));
+        // Convert dragged mouse position to 1024-space
+        const dragX = pt.x / _handleState.scl;
+        const dragY = pt.y / _handleState.scl;
+        const fx = _handleState.fixedX;
+        const fy = _handleState.fixedY;
+        // New current bbox spans from fixed corner to dragged corner
+        l.x = Math.min(fx, dragX);
+        l.y = Math.min(fy, dragY);
+        l.w = Math.max(4, Math.abs(dragX - fx));
+        l.h = Math.max(4, Math.abs(dragY - fy));
+        // scaleX/scaleY kept at 1 — rendering uses ox/oy/ow/oh as source crop
       } else if (_handleState.mode === 'rotate') {
         const angle = Math.atan2(pt.y - _handleState.cy, pt.x - _handleState.cx);
         l.rot = _handleState.origRot + (angle - _handleState.refAngle);
@@ -821,7 +872,7 @@ const DRAW = (() => {
         if (hit) {
           overHandle = true;
           cursorCanvas.style.cursor = hit.mode === 'rotate' ? 'crosshair'
-            : hit.mode === 'scale' ? 'nwse-resize'
+            : hit.mode === 'scale' ? ((hit.ci === 0 || hit.ci === 2) ? 'nwse-resize' : 'nesw-resize')
             : hit.mode === 'delete' ? 'pointer'
             : 'grab';
         }

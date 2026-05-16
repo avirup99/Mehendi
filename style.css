@@ -861,3 +861,29 @@ body.dark .mode-btn.active,
 body.dark .strip-btn.active {
   color: #111;
 }
+
+/* ── Admin UI ──────────────────────────────────────────────── */
+.fb-admin-bar {
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px dashed rgba(200,0,0,0.2);
+}
+.fb-admin-btn {
+  font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: .06em;
+  padding: 3px 8px; border: 1px solid var(--border); border-radius: 5px;
+  background: transparent; color: var(--text-secondary);
+  cursor: pointer; transition: all .12s; white-space: nowrap;
+}
+.fb-admin-btn:hover         { background: var(--accent-light); color: var(--text-primary); }
+.fb-admin-btn-del           { border-color: rgba(200,0,0,.25); color: #a00; }
+.fb-admin-btn-del:hover     { background: rgba(200,0,0,.08); color: #c00; }
+.fb-admin-btn-ban           { border-color: rgba(180,80,0,.25); color: #804000; }
+.fb-admin-btn-ban:hover     { background: rgba(200,80,0,.08); color: #c06000; }
+.fb-admin-select {
+  font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: .04em;
+  padding: 3px 6px; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--surface); color: var(--text-secondary); cursor: pointer;
+}
+.fb-card-pinned             { border-left: 2px solid var(--accent) !important; }
+.fb-card-hidden             { opacity: .55; }
+body.dark .fb-admin-select  { background: var(--surface); color: var(--text-secondary); }

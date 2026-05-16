@@ -11,7 +11,7 @@ const UI = (() => {
     scene:    { label: 'Lighting',   content: 'content-scene'    },
     uv:       { label: 'Design',     content: 'content-uv'       },
     draw:     { label: 'Draw',       content: 'content-draw'     },
-    models:   { label: 'Load Model', content: 'content-models'  },
+    models:   { label: 'Load Model', content: 'content-models'   },
   };
 
   let activePanel = null;
@@ -72,6 +72,34 @@ const UI = (() => {
       else openPanel(name);
     });
   });
+
+  // ── Feedback full-tab overlay ────────────────────────────
+  const feedbackOverlay = document.getElementById('feedback-overlay');
+  let feedbackOpen = false;
+
+  function openFeedback() {
+    feedbackOpen = true;
+    closePanel(); // close drawer if open
+    feedbackOverlay.classList.add('open');
+    document.getElementById('strip-feedback').classList.add('active');
+  }
+
+  function closeFeedback() {
+    feedbackOpen = false;
+    feedbackOverlay.classList.remove('open');
+    document.getElementById('strip-feedback').classList.remove('active');
+  }
+
+  const stripFeedback = document.getElementById('strip-feedback');
+  if (stripFeedback) {
+    stripFeedback.addEventListener('click', () => {
+      if (feedbackOpen) closeFeedback();
+      else openFeedback();
+    });
+  }
+
+  const feedbackCloseBtn = document.getElementById('feedback-overlay-close');
+  if (feedbackCloseBtn) feedbackCloseBtn.addEventListener('click', closeFeedback);
 
   // (pin button removed)
 

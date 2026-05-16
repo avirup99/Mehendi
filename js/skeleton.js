@@ -141,6 +141,15 @@ const SKELETON = (() => {
     const w = diagCanvas.width, h = diagCanvas.height;
     diagCtx.clearRect(0, 0, w, h);
 
+    // Resolve theme-aware colours
+    const dark         = document.body.classList.contains('dark');
+    const nodeColor    = dark ? '#f0f0f0' : '#0a0a0a';
+    const nodeStroke   = dark ? '#1e1e1e' : '#ffffff';
+    const edgeColor    = dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.12)';
+    const unmappedFill = dark ? '#444444' : '#d0d0d0';
+    const unmappedStk  = dark ? '#555555' : '#bbbbbb';
+    const hintColor    = dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)';
+
     // Draw edges
     DIAGRAM_EDGES.forEach(([aId, bId]) => {
       const a = DIAGRAM_NODES.find(n => n.id === aId);
@@ -156,7 +165,7 @@ const SKELETON = (() => {
         diagCtx.strokeStyle = 'rgba(255,102,0,0.55)';
         diagCtx.lineWidth = 2.5;
       } else {
-        diagCtx.strokeStyle = 'rgba(0,0,0,0.12)';
+        diagCtx.strokeStyle = edgeColor;
         diagCtx.lineWidth = 1.5;
       }
       diagCtx.stroke();
@@ -184,24 +193,24 @@ const SKELETON = (() => {
         diagCtx.arc(p.x, p.y, R, 0, Math.PI * 2);
         diagCtx.fillStyle = '#ff6600';
         diagCtx.fill();
-        diagCtx.strokeStyle = '#fff';
+        diagCtx.strokeStyle = nodeStroke;
         diagCtx.lineWidth = 1.8;
         diagCtx.stroke();
       } else if (isMapped) {
         diagCtx.beginPath();
         diagCtx.arc(p.x, p.y, R, 0, Math.PI * 2);
-        diagCtx.fillStyle = '#0a0a0a';
+        diagCtx.fillStyle = nodeColor;
         diagCtx.fill();
-        diagCtx.strokeStyle = '#fff';
+        diagCtx.strokeStyle = nodeStroke;
         diagCtx.lineWidth = 1.2;
         diagCtx.stroke();
       } else {
         // Unmapped placeholder
         diagCtx.beginPath();
         diagCtx.arc(p.x, p.y, R, 0, Math.PI * 2);
-        diagCtx.fillStyle = '#d0d0d0';
+        diagCtx.fillStyle = unmappedFill;
         diagCtx.fill();
-        diagCtx.strokeStyle = '#bbb';
+        diagCtx.strokeStyle = unmappedStk;
         diagCtx.lineWidth = 1;
         diagCtx.stroke();
       }
@@ -209,7 +218,7 @@ const SKELETON = (() => {
 
     // Hint if no bones matched
     if (!Object.keys(nodeToGlobalIdx).length && allBones.length > 0) {
-      diagCtx.fillStyle = 'rgba(0,0,0,0.3)';
+      diagCtx.fillStyle = hintColor;
       diagCtx.font = '10px DM Mono, monospace';
       diagCtx.textAlign = 'center';
       diagCtx.fillText('Bone names not recognised', w / 2, h / 2 - 8);
@@ -450,5 +459,5 @@ const SKELETON = (() => {
     });
   }
 
-  return { init };
+  return { init, drawDiagram: () => drawDiagram() };
 })();

@@ -527,7 +527,7 @@ const UV_DESIGNER = (() => {
     });
 
     document.getElementById('uv-modal-cancel-btn').addEventListener('click', _hideModal);
-    modal.addEventListener('click', (e) => { if (e.target === modal) _hideModal(); });
+    // UV upload modal closes only via Cancel button
 
     // ── Normal upload (no bg removal) ────────────────────
     normalInput.addEventListener('change', (e) => {

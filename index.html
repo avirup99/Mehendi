@@ -85,6 +85,14 @@
     <span class="tip">Load Model</span>
   </button>
 
+  <button class="strip-btn" id="strip-feedback">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2 3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-3 2v-2H3a1 1 0 0 1-1-1V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+      <path d="M5 6h6M5 8.5h4" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.6"/>
+    </svg>
+    <span class="tip">Feedback</span>
+  </button>
+
   <div class="strip-spacer"></div>
 
   <button class="strip-btn" id="strip-theme" onclick="toggleTheme()" title="Toggle dark/light mode">
@@ -520,8 +528,919 @@
       </div>
     </div>
     <!-- END DRAW PANEL -->
+
   </div>
 </div>
+
+<!-- ── Feedback Full-Tab Overlay ──────────────────────────── -->
+<div id="feedback-overlay">
+  <div id="feedback-overlay-head">
+    <span id="feedback-overlay-title">Feedback</span>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <!-- Sign-in button (shown when logged out) -->
+      <button id="fb-signin-btn" onclick="fbShowAuth()">
+        <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="2.5" stroke="currentColor" stroke-width="1.3"/><path d="M2 12c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Sign in
+      </button>
+      <!-- User avatar (shown when logged in) -->
+      <div id="fb-user-chip" style="display:none;">
+        <div id="fb-user-avatar"></div>
+        <span id="fb-user-name"></span>
+        <button id="fb-signout-btn" onclick="fbSignOut()" title="Sign out">
+          <svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M9 2h3v10H9M6 10l3-3-3-3M9 7H2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <button id="feedback-overlay-close" aria-label="Close">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+          <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Primary tab bar: Feedback / Roadmap -->
+  <div id="fb-top-tabs">
+    <button class="fb-top-tab active" data-top="feedback" onclick="fbTopTab(this,'feedback')">
+      <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 3a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H8l-3 2v-2H3a1 1 0 0 1-1-1V3z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+      Feedback
+    </button>
+    <button class="fb-top-tab" data-top="roadmap" onclick="fbTopTab(this,'roadmap')">
+      <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 3h10M2 7h7M2 11h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Roadmap
+    </button>
+  </div>
+
+  <div id="feedback-overlay-body">
+    <div id="content-feedback">
+      <style>
+        #feedback-overlay { position:fixed; top:0; left:44px; right:0; bottom:0; background:var(--surface); border-left:1px solid var(--border); z-index:28; display:flex; flex-direction:column; transform:translateX(calc(-100% - 44px)); opacity:0; transition:transform 0.24s cubic-bezier(0.4,0,0.2,1), opacity 0.2s; pointer-events:none; }
+        #feedback-overlay.open { transform:translateX(0); opacity:1; pointer-events:auto; }
+        #feedback-overlay-head { display:flex; align-items:center; justify-content:space-between; padding:12px 16px 10px; border-bottom:1px solid var(--border); flex-shrink:0; }
+        #feedback-overlay-title { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:var(--text-secondary); }
+        #feedback-overlay-close { background:none; border:none; cursor:pointer; color:var(--text-secondary); display:flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:6px; transition:background 0.12s,color 0.12s; }
+        #feedback-overlay-close:hover { background:var(--accent-light); color:var(--text-primary); }
+
+        /* Top tabs: Features / Bugs / Roadmap */
+        #fb-top-tabs { display:flex; gap:0; border-bottom:1px solid var(--border); padding:0 16px; flex-shrink:0; }
+        .fb-top-tab { display:flex; align-items:center; gap:6px; font-family:'DM Mono',monospace; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; padding:10px 10px; border:none; background:transparent; color:var(--text-secondary); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; transition:color 0.15s, border-color 0.15s; }
+        .fb-top-tab:hover { color:var(--text-primary); }
+        .fb-top-tab.active { color:var(--text-primary); border-bottom-color:var(--accent); }
+
+        #feedback-overlay-body { flex:1; overflow-y:auto; padding:28px 0; }
+        #feedback-overlay-body::-webkit-scrollbar { width:4px; }
+        #feedback-overlay-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+        #content-feedback { font-family:'DM Sans',sans-serif; max-width:680px; margin:0 auto; padding:0 32px; }
+
+        /* Top panes */
+        .fb-top-pane { display:none; flex-direction:column; gap:16px; }
+        .fb-top-pane.active { display:flex; }
+
+        /* Filter bar — inline dropdowns */
+        .fb-filter-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+        .fb-filter-label { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-secondary); }
+        .fb-select { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:0.04em; padding:5px 10px 5px 10px; border:1px solid var(--border); border-radius:20px; background:var(--surface); color:var(--text-secondary); cursor:pointer; appearance:none; -webkit-appearance:none; outline:none; transition:border-color 0.12s,color 0.12s; background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 8px center; padding-right:24px; }
+        .fb-select:hover,.fb-select:focus { border-color:rgba(0,0,0,.25); color:var(--text-primary); }
+        body.dark .fb-select { background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23aaa' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+        body.dark .fb-select option { background:var(--surface); color:var(--text-primary); }
+        .fb-filter-sep { width:1px; height:14px; background:var(--border); margin:0 2px; }
+        .fb-result-count { font-family:'DM Mono',monospace; font-size:9px; color:var(--text-secondary); margin-left:auto; }
+
+        /* Composer */
+        .fb-composer { background:var(--accent-light); border:1px solid var(--border); border-radius:10px; padding:14px; display:flex; flex-direction:column; gap:8px; }
+        .fb-composer-label { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-secondary); }
+        .fb-input { width:100%; font-family:'DM Sans',sans-serif; font-size:12px; padding:7px 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--text-primary); outline:none; transition:border-color .12s; box-sizing:border-box; }
+        .fb-input:focus { border-color:rgba(0,0,0,.22); }
+        body.dark .fb-input:focus { border-color:rgba(255,255,255,.25); }
+        .fb-textarea { resize:none; height:72px; line-height:1.55; }
+        .fb-composer-row { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+        .fb-att-btn { display:flex; align-items:center; gap:4px; font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.06em; color:var(--text-secondary); background:none; border:1px solid var(--border); border-radius:6px; padding:4px 9px; cursor:pointer; transition:all .12s; }
+        .fb-att-btn:hover { color:var(--text-primary); border-color:rgba(0,0,0,.2); }
+        .fb-btn-row { display:flex; gap:5px; }
+        .fb-btn { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.08em; text-transform:uppercase; padding:5px 12px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--text-secondary); cursor:pointer; transition:all .13s; }
+        .fb-btn:hover { color:var(--text-primary); background:var(--accent-light); }
+        .fb-btn.primary { background:var(--accent); color:var(--tip-text,#fff); border-color:var(--accent); }
+        .fb-btn.primary:hover { opacity:.85; }
+
+        /* Post list */
+        .fb-post-list { display:flex; flex-direction:column; gap:8px; }
+        .fb-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 14px; cursor:pointer; transition:border-color .12s, box-shadow .12s; display:grid; grid-template-columns:36px 1fr; gap:12px; align-items:start; }
+        .fb-card:hover { border-color:rgba(0,0,0,.18); box-shadow:0 2px 12px rgba(0,0,0,.06); }
+        body.dark .fb-card:hover { border-color:rgba(255,255,255,.2); box-shadow:0 2px 12px rgba(0,0,0,.3); }
+        .fb-vote-col { display:flex; flex-direction:column; align-items:center; gap:3px; padding-top:2px; }
+        .fb-vote-btn { width:28px; height:28px; border:1px solid var(--border); border-radius:7px; background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--text-secondary); transition:all .12s; font-size:13px; }
+        .fb-vote-btn:hover,.fb-vote-btn.voted { border-color:var(--accent); color:var(--accent); }
+        .fb-vote-btn.voted { background:var(--accent); color:var(--tip-text,#fff); }
+        .fb-vote-n { font-family:'DM Mono',monospace; font-size:10px; font-weight:400; color:var(--text-secondary); }
+        .fb-card-body { min-width:0; }
+        .fb-card-title { font-size:13px; font-weight:400; color:var(--text-primary); margin-bottom:4px; line-height:1.4; }
+        .fb-card-desc { font-size:11px; color:var(--text-secondary); line-height:1.55; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; margin-bottom:7px; }
+        .fb-card-meta { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+        .fb-badge { font-family:'DM Mono',monospace; font-size:8px; letter-spacing:.05em; padding:2px 7px; border-radius:20px; }
+        .fb-badge.cat-feat { background:var(--accent-light); color:var(--text-secondary); border:1px solid var(--border); }
+        .fb-badge.cat-bug { background:#FCEBEB; color:#A32D2D; border:1px solid #F7C1C1; }
+        .fb-badge.s-review { background:#EAF3DE; color:#3B6D11; }
+        .fb-badge.s-planned { background:#E6F1FB; color:#185FA5; }
+        .fb-badge.s-inprog { background:#FAEEDA; color:#854F0B; }
+        .fb-badge.s-complete { background:#E1F5EE; color:#0F6E56; }
+        .fb-meta-item { display:flex; align-items:center; gap:3px; font-family:'DM Mono',monospace; font-size:9px; color:var(--text-secondary); }
+
+        /* Post detail modal */
+        .fb-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.42); z-index:200; display:flex; align-items:flex-start; justify-content:center; padding:20px 16px; overflow-y:auto; }
+        .fb-modal { width:100%; max-width:440px; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; margin:auto; }
+        .fb-modal-head { padding:10px 12px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:8px; }
+        .fb-modal-close { background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:16px; line-height:1; padding:2px; }
+        .fb-modal-close:hover { color:var(--text-primary); }
+        .fb-modal-body { padding:12px; display:flex; flex-direction:column; gap:11px; max-height:70vh; overflow-y:auto; }
+        .fb-modal-body::-webkit-scrollbar { width:3px; }
+        .fb-modal-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+        .fb-section-label { font-family:'DM Mono',monospace; font-size:8px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-secondary); margin-bottom:4px; }
+        .fb-modal-desc { font-size:12px; color:var(--text-secondary); line-height:1.65; }
+        .fb-att-chips { display:flex; gap:5px; flex-wrap:wrap; }
+        .fb-att-chip { display:flex; align-items:center; gap:4px; font-family:'DM Mono',monospace; font-size:9px; color:var(--text-secondary); background:var(--accent-light); border:1px solid var(--border); border-radius:5px; padding:3px 8px; }
+        .fb-admin-note { background:var(--accent-light); border:1px solid var(--border); border-left:2px solid var(--accent); border-radius:0 6px 6px 0; padding:7px 10px; }
+        .fb-admin-label { font-family:'DM Mono',monospace; font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-secondary); margin-bottom:3px; }
+        .fb-tl { display:flex; flex-direction:column; gap:0; }
+        .fb-tl-item { display:flex; gap:8px; padding-bottom:9px; position:relative; }
+        .fb-tl-item:last-child { padding-bottom:0; }
+        .fb-tl-dot { width:7px; height:7px; border-radius:50%; background:var(--text-secondary); flex-shrink:0; margin-top:4px; }
+        .fb-tl-dot.active { background:var(--accent); }
+        .fb-tl-line { position:absolute; left:3px; top:11px; bottom:0; width:1px; background:var(--border); }
+        .fb-tl-item:last-child .fb-tl-line { display:none; }
+        .fb-tl-text { font-size:11px; color:var(--text-secondary); line-height:1.4; }
+        .fb-tl-text.active { color:var(--text-primary); }
+        .fb-tl-time { font-family:'DM Mono',monospace; font-size:9px; color:var(--text-secondary); margin-top:1px; }
+        .fb-voter-row { display:flex; gap:3px; flex-wrap:wrap; }
+        .fb-voter { width:22px; height:22px; border-radius:50%; background:var(--accent-light); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-family:'DM Mono',monospace; font-size:8px; color:var(--text-secondary); }
+        .fb-comment-list { display:flex; flex-direction:column; gap:6px; }
+        .fb-comment { display:flex; gap:6px; align-items:flex-start; }
+        .fb-c-avatar { width:20px; height:20px; border-radius:50%; background:var(--accent-light); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-family:'DM Mono',monospace; font-size:8px; color:var(--text-secondary); flex-shrink:0; }
+        .fb-c-bubble { background:var(--accent-light); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-size:11px; color:var(--text-secondary); line-height:1.5; flex:1; }
+        .fb-c-name { font-family:'DM Mono',monospace; font-size:9px; color:var(--text-primary); margin-bottom:2px; }
+        .fb-c-input-row { display:flex; gap:5px; margin-top:3px; }
+        .fb-c-input-row input { flex:1; font-family:'DM Sans',sans-serif; font-size:11px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; background:var(--accent-light); color:var(--text-primary); outline:none; transition:border-color .12s; }
+        .fb-c-input-row input:focus { border-color:rgba(0,0,0,.22); }
+        body.dark .fb-c-input-row input:focus { border-color:rgba(255,255,255,.25); }
+
+        /* Roadmap */
+        .fb-rm-stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+        .fb-stat { background:var(--accent-light); border:1px solid var(--border); border-radius:8px; padding:12px 14px; }
+        .fb-stat-label { font-family:'DM Mono',monospace; font-size:8px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-secondary); margin-bottom:4px; }
+        .fb-stat-val { font-size:22px; font-weight:300; color:var(--text-primary); line-height:1; }
+        .fb-rm-cols { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+        @media(max-width:600px){ .fb-rm-cols { grid-template-columns:1fr; } }
+        .fb-rm-col { background:var(--accent-light); border:1px solid var(--border); border-radius:9px; overflow:hidden; }
+        .fb-rm-col-head { padding:8px 10px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+        .fb-rm-col-title { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; }
+        .fb-rm-col-title.planned { color:#185FA5; }
+        .fb-rm-col-title.inprog { color:#854F0B; }
+        .fb-rm-col-title.complete { color:#0F6E56; }
+        .fb-rm-col-count { font-family:'DM Mono',monospace; font-size:9px; color:var(--text-secondary); background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:1px 6px; }
+        .fb-rm-items { padding:6px; display:flex; flex-direction:column; gap:4px; }
+        .fb-rm-item { background:var(--surface); border:1px solid var(--border); border-radius:7px; padding:7px 9px; cursor:pointer; transition:border-color .12s; }
+        .fb-rm-item:hover { border-color:rgba(0,0,0,.18); }
+        body.dark .fb-rm-item:hover { border-color:rgba(255,255,255,.2); }
+        .fb-rm-item-title { font-size:11px; color:var(--text-primary); margin-bottom:4px; line-height:1.35; }
+        .fb-rm-item-foot { display:flex; align-items:center; justify-content:space-between; }
+        .fb-rm-votes { display:flex; align-items:center; gap:3px; font-family:'DM Mono',monospace; font-size:9px; color:var(--text-secondary); }
+        .fb-rm-link { font-family:'DM Mono',monospace; font-size:8px; color:var(--text-secondary); background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:1px 6px; display:flex; align-items:center; gap:2px; cursor:pointer; transition:all .12s; }
+        .fb-rm-link:hover { color:var(--text-primary); border-color:rgba(0,0,0,.2); }
+        .fb-empty { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-secondary); text-align:center; padding:2rem 0; }
+        .fb-divider { height:1px; background:var(--border); margin:4px 0; }
+
+        /* Sub-tabs: Features / Bugs (inside Feedback pane) */
+        #fb-sub-tabs { display:flex; gap:4px; padding:14px 0 2px; flex-shrink:0; }
+        .fb-sub-tab { display:flex; align-items:center; gap:5px; font-family:'DM Mono',monospace; font-size:9px; letter-spacing:0.09em; text-transform:uppercase; padding:5px 8px; border:1px solid var(--border); border-radius:20px; background:transparent; color:var(--text-secondary); cursor:pointer; transition:all 0.14s; }
+        .fb-sub-tab:hover { color:var(--text-primary); background:var(--accent-light); }
+        .fb-sub-tab.active { background:var(--accent); color:var(--tip-text,#fff); border-color:var(--accent); }
+        .fb-sub-pane { display:none; flex-direction:column; gap:16px; }
+        .fb-sub-pane.active { display:flex; }
+
+        /* Sign-in button in header */
+        #fb-signin-btn { display:flex; align-items:center; gap:5px; font-family:'DM Mono',monospace; font-size:9px; letter-spacing:0.09em; text-transform:uppercase; padding:5px 10px; border:1px solid var(--border); border-radius:20px; background:transparent; color:var(--text-secondary); cursor:pointer; transition:all 0.14s; }
+        #fb-signin-btn:hover { color:var(--text-primary); background:var(--accent-light); border-color:rgba(0,0,0,0.2); }
+        #fb-user-chip { display:flex; align-items:center; gap:6px; padding:3px 8px 3px 4px; border:1px solid var(--border); border-radius:20px; background:var(--accent-light); }
+        #fb-user-avatar { width:20px; height:20px; border-radius:50%; background:var(--accent); color:var(--tip-text,#fff); font-family:'DM Mono',monospace; font-size:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        #fb-user-name { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:0.05em; color:var(--text-primary); max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        #fb-signout-btn { background:none; border:none; cursor:pointer; color:var(--text-secondary); display:flex; align-items:center; padding:1px; border-radius:3px; transition:color 0.12s; }
+        #fb-signout-btn:hover { color:#c00; }
+
+        /* Locked composer overlay */
+        .fb-composer-locked { position:relative; }
+        .fb-composer-locked::after { content:''; position:absolute; inset:0; border-radius:10px; background:rgba(var(--surface-raw,255,255,255),0.0); cursor:pointer; z-index:2; }
+        .fb-composer-gate { display:flex; align-items:center; justify-content:center; gap:8px; padding:14px; background:var(--accent-light); border:1px solid var(--border); border-radius:10px; cursor:pointer; transition:background 0.14s; }
+        .fb-composer-gate:hover { background:rgba(0,0,0,0.05); }
+        .fb-composer-gate-icon { color:var(--text-secondary); }
+        .fb-composer-gate-text { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:0.07em; color:var(--text-secondary); }
+        .fb-composer-gate-link { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:0.07em; color:var(--accent); text-decoration:underline; text-underline-offset:2px; background:none; border:none; cursor:pointer; padding:0; }
+
+        /* Auth modal */
+        #fb-auth-modal { display:none; z-index:300; }
+        #fb-auth-modal.open { display:flex !important; }
+        #fb-auth-box { width:100%; max-width:320px; background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,0.18); }
+        #fb-auth-head { display:flex; align-items:center; justify-content:space-between; padding:14px 16px 12px; border-bottom:1px solid var(--border); }
+        #fb-auth-title { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:var(--text-secondary); }
+        #fb-auth-close { background:none; border:none; cursor:pointer; color:var(--text-secondary); display:flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:6px; transition:background 0.12s,color 0.12s; }
+        #fb-auth-close:hover { background:var(--accent-light); color:var(--text-primary); }
+        #fb-auth-body { padding:16px; display:flex; flex-direction:column; gap:10px; }
+        #fb-auth-subtitle { font-family:'DM Sans',sans-serif; font-size:12px; color:var(--text-secondary); line-height:1.55; margin:0 0 2px; }
+        #fb-auth-error { font-family:'DM Mono',monospace; font-size:9px; color:#c00; min-height:12px; letter-spacing:0.04em; }
+        #fb-auth-submit-btn { width:100%; font-family:'DM Mono',monospace; font-size:10px; letter-spacing:0.1em; text-transform:uppercase; padding:9px 0; background:var(--accent); color:var(--tip-text,#fff); border:none; border-radius:7px; cursor:pointer; transition:opacity 0.15s; }
+        #fb-auth-submit-btn:hover { opacity:0.85; }
+        #fb-auth-switch { font-family:'DM Sans',sans-serif; font-size:11px; color:var(--text-secondary); text-align:center; }
+        #fb-auth-switch button { background:none; border:none; cursor:pointer; font-family:'DM Sans',sans-serif; font-size:11px; color:var(--accent); text-decoration:underline; text-underline-offset:2px; padding:0; }
+      </style>
+
+      <!-- Feedback pane (contains Features + Bugs sub-tabs) -->
+      <div id="fb-top-feedback" class="fb-top-pane active">
+
+        <!-- Sub-tab bar -->
+        <div id="fb-sub-tabs">
+          <button class="fb-sub-tab active" data-sub="features" onclick="fbSubTab(this,'features')">
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 4h4.5L9.5 8l1.5 4L7 9.5 3 12l1.5-4L1 5.5H5.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+            Features
+          </button>
+          <button class="fb-sub-tab" data-sub="bugs" onclick="fbSubTab(this,'bugs')">
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="8" r="4" stroke="currentColor" stroke-width="1.2"/><path d="M5 5c0-1.1.9-2 2-2s2 .9 2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M7 8v2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="7" cy="11" r=".5" fill="currentColor"/></svg>
+            Bugs
+          </button>
+        </div>
+
+        <!-- Features sub-pane -->
+        <div id="fb-sub-features" class="fb-sub-pane active">
+          <div class="fb-composer" id="fb-feat-composer">
+            <div class="fb-composer-label">Submit a feature request</div>
+            <input class="fb-input" type="text" id="fb-title" placeholder="Post title&#x2026;" autocomplete="off">
+            <textarea class="fb-input fb-textarea" id="fb-body" placeholder="Describe the feature in detail&#x2026;"></textarea>
+            <div class="fb-composer-row">
+              <button class="fb-att-btn">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6.5l3.5 3.5a3 3 0 0 0 4.24-4.24L4.06 1.06A1.5 1.5 0 0 0 2 3.12L7.7 8.82a.75.75 0 0 0 1.06-1.06L3.5 2.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+                Attach
+              </button>
+              <div class="fb-btn-row">
+                <button class="fb-btn" onclick="fbClearComposer()">Cancel</button>
+                <button class="fb-btn primary" onclick="fbSubmitPost('feature')">Submit</button>
+              </div>
+            </div>
+          </div>
+          <div class="fb-divider"></div>
+          <div class="fb-filter-bar">
+            <span class="fb-filter-label">Sort</span>
+            <select class="fb-select" id="fb-feat-sort" onchange="fbApplyFilters('features')">
+              <option value="trending">Trending</option>
+              <option value="top">Top voted</option>
+              <option value="new">Newest</option>
+            </select>
+            <div class="fb-filter-sep"></div>
+            <span class="fb-filter-label">Status</span>
+            <select class="fb-select" id="fb-feat-status" onchange="fbApplyFilters('features')">
+              <option value="all">All statuses</option>
+              <option value="review">Under review</option>
+              <option value="planned">Planned</option>
+              <option value="inprog">In progress</option>
+              <option value="complete">Complete</option>
+            </select>
+            <span class="fb-result-count" id="fb-feat-count"></span>
+          </div>
+          <div class="fb-post-list" id="fb-feat-list"></div>
+        </div>
+
+        <!-- Bugs sub-pane -->
+        <div id="fb-sub-bugs" class="fb-sub-pane">
+          <div class="fb-composer" id="fb-bug-composer">
+            <div class="fb-composer-label">Report a bug</div>
+            <input class="fb-input" type="text" id="fb-bug-title" placeholder="Bug title&#x2026;" autocomplete="off">
+            <textarea class="fb-input fb-textarea" id="fb-bug-body" placeholder="Steps to reproduce&#x2026;"></textarea>
+            <div class="fb-composer-row">
+              <button class="fb-att-btn">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6.5l3.5 3.5a3 3 0 0 0 4.24-4.24L4.06 1.06A1.5 1.5 0 0 0 2 3.12L7.7 8.82a.75.75 0 0 0 1.06-1.06L3.5 2.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+                Attach
+              </button>
+              <div class="fb-btn-row">
+                <button class="fb-btn" onclick="fbClearBugComposer()">Cancel</button>
+                <button class="fb-btn primary" onclick="fbSubmitPost('bug')">Report</button>
+              </div>
+            </div>
+          </div>
+          <div class="fb-divider"></div>
+          <div class="fb-filter-bar">
+            <span class="fb-filter-label">Sort</span>
+            <select class="fb-select" id="fb-bug-sort" onchange="fbApplyFilters('bugs')">
+              <option value="trending">Trending</option>
+              <option value="top">Top voted</option>
+              <option value="new">Newest</option>
+            </select>
+            <div class="fb-filter-sep"></div>
+            <span class="fb-filter-label">Status</span>
+            <select class="fb-select" id="fb-bug-status" onchange="fbApplyFilters('bugs')">
+              <option value="all">All statuses</option>
+              <option value="review">Under review</option>
+              <option value="planned">Planned</option>
+              <option value="inprog">In progress</option>
+              <option value="complete">Complete</option>
+            </select>
+            <span class="fb-result-count" id="fb-bug-count"></span>
+          </div>
+          <div class="fb-post-list" id="fb-bug-list"></div>
+        </div>
+
+      </div>
+
+      <!-- Roadmap pane -->
+      <div id="fb-top-roadmap" class="fb-top-pane">
+        <div class="fb-rm-stats" id="fb-rm-stats"></div>
+        <div class="fb-rm-cols" id="fb-rm-cols"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Feedback modal mount -->
+<div id="fb-modal-mount"></div>
+
+<!-- Auth modal — top-level so it's never inside a stacking context -->
+<div id="fb-auth-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;background:rgba(0,0,0,0.38);backdrop-filter:blur(4px);">
+  <div id="fb-auth-box">
+    <div id="fb-auth-head">
+      <span id="fb-auth-title">Sign in</span>
+      <button onclick="fbHideAuth()" id="fb-auth-close">
+        <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div id="fb-auth-body">
+      <p id="fb-auth-subtitle">Sign in to submit feedback and vote on posts.</p>
+      <div id="fb-auth-name-row" style="display:none;">
+        <input class="fb-input" type="text" id="fb-auth-name" placeholder="Your name" autocomplete="name">
+      </div>
+      <input class="fb-input" type="email" id="fb-auth-email" placeholder="Email address" autocomplete="email">
+      <input class="fb-input" type="password" id="fb-auth-pass" placeholder="Password" autocomplete="current-password">
+      <div id="fb-auth-error"></div>
+      <button id="fb-auth-submit-btn" onclick="fbAuthSubmit()">Sign in</button>
+      <div style="display:flex;align-items:center;gap:8px;margin:2px 0;">
+        <div style="flex:1;height:1px;background:var(--border);"></div>
+        <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-secondary);">or</span>
+        <div style="flex:1;height:1px;background:var(--border);"></div>
+      </div>
+      <button onclick="fbSignInWithGoogle()" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.06em;padding:9px 0;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text-primary);cursor:pointer;transition:background 0.14s;">
+        <svg width="16" height="16" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/><path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/><path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/><path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/></svg>
+        Continue with Google
+      </button>
+      <div id="fb-auth-switch">
+        Don't have an account? <button onclick="fbToggleAuthMode()">Sign up</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ── Feedback & Roadmap panel logic (Supabase backend) ─────
+(function(){
+  const SUPABASE_URL      = 'https://ovpcwzygqngkhhhkizbe.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92cGN3enlncW5na2hoaGtpemJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NjA1MjIsImV4cCI6MjA5NDMzNjUyMn0.cX_DBrggodhxqWoksImORufOGBvom-mNbZaC2iHYZGE';
+
+  const _sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: true },
+    global: { fetch: (...args) => fetch(...args) }
+  });
+
+  let _posts    = [];
+  let _myVotes  = new Set();
+  let _fbUser   = null;
+  let _isAdmin  = false;
+  let currentTop = 'feedback';
+  let currentSub = 'features';
+
+  // ── Helpers ──────────────────────────────────────────────────
+  function sLabel(s){ return {review:'Under review',planned:'Planned',inprog:'In progress',complete:'Complete'}[s]||s; }
+  function fmtTime(ts){
+    if (!ts) return '';
+    const diff = Date.now() - new Date(ts).getTime();
+    if (diff < 60000)     return 'just now';
+    if (diff < 3600000)   return Math.floor(diff/60000)  + 'm ago';
+    if (diff < 86400000)  return Math.floor(diff/3600000) + 'h ago';
+    if (diff < 604800000) return Math.floor(diff/86400000)+ 'd ago';
+    return new Date(ts).toLocaleDateString();
+  }
+  function _initials(name){
+    if (!name) return '?';
+    const p = name.trim().split(' ');
+    return p.length >= 2 ? (p[0][0]+p[1][0]).toUpperCase() : name.slice(0,2).toUpperCase();
+  }
+  function _esc(str){
+    if (str == null) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Admin check ───────────────────────────────────────────────
+  async function checkAdmin(){
+    if (!_fbUser){ _isAdmin = false; return; }
+    try {
+      const r = await fetch('/admin/check');
+      _isAdmin = r.ok;
+    } catch(_){ _isAdmin = false; }
+    _renderAdminBadge();
+  }
+
+  function _renderAdminBadge(){
+    const chip = document.getElementById('fb-user-chip');
+    if (!chip) return;
+    const existing = chip.querySelector('.fb-admin-badge');
+    if (existing) existing.remove();
+    if (_isAdmin){
+      const badge = document.createElement('span');
+      badge.className = 'fb-admin-badge';
+      badge.textContent = 'admin';
+      badge.style.cssText = 'font-family:"DM Mono",monospace;font-size:8px;letter-spacing:.08em;background:#0a0a0a;color:#fff;border-radius:4px;padding:1px 5px;';
+      chip.insertBefore(badge, chip.querySelector('#fb-signout-btn'));
+    }
+  }
+
+  // ── Admin API helpers ─────────────────────────────────────────
+  async function adminPatch(postId, patch){
+    const r = await fetch('/admin/posts/'+postId, {
+      method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(patch)
+    });
+    if (!r.ok) throw new Error(await r.text());
+    await loadPosts();
+  }
+
+  async function adminDelete(postId){
+    await fetch('/admin/posts/'+postId, { method:'DELETE' });
+    await loadPosts();
+  }
+
+  async function adminBan(userId, ban, reason){
+    await fetch('/admin/'+(ban?'ban':'unban')+'/'+userId, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ reason: reason||'' })
+    });
+    await loadPosts();
+  }
+
+  // ── Admin action bar (rendered inside each card) ──────────────
+  function _adminBar(p){
+    if (!_isAdmin) return '';
+    const statusOpts = ['review','planned','inprog','complete']
+      .map(s => `<option value="${s}"${p.status===s?' selected':''}>${sLabel(s)}</option>`).join('');
+    return `
+    <div class="fb-admin-bar" onclick="event.stopPropagation()">
+      <select class="fb-admin-select" onchange="fbAdminStatus(${p.id},this.value)" title="Set status">
+        ${statusOpts}
+      </select>
+      <button class="fb-admin-btn" onclick="fbAdminPin(${p.id},${!p.pinned})" title="${p.pinned?'Unpin':'Pin'}">
+        ${p.pinned?'📌 Pinned':'📌 Pin'}
+      </button>
+      <button class="fb-admin-btn" onclick="fbAdminApprove(${p.id},${!p.approved})" title="${p.approved?'Hide':'Approve'}">
+        ${p.approved?'👁 Hide':'👁 Show'}
+      </button>
+      <button class="fb-admin-btn fb-admin-btn-del" onclick="fbAdminDelete(${p.id})" title="Delete">
+        🗑 Delete
+      </button>
+      ${p.user_id ? `<button class="fb-admin-btn fb-admin-btn-ban" onclick="fbAdminBanUser('${p.user_id}',${p.author_banned})" title="${p.author_banned?'Unban':'Ban'} user">
+        🚫 ${p.author_banned?'Unban':'Ban'}
+      </button>` : ''}
+    </div>`;
+  }
+
+  // ── Admin actions (global) ────────────────────────────────────
+  window.fbAdminStatus  = (id,s)   => adminPatch(id,{status:s}).catch(console.error);
+  window.fbAdminPin     = (id,v)   => adminPatch(id,{pinned:v}).catch(console.error);
+  window.fbAdminApprove = (id,v)   => adminPatch(id,{approved:v}).catch(console.error);
+  window.fbAdminDelete  = async (id) => {
+    if (!confirm('Delete this post permanently?')) return;
+    adminDelete(id).catch(console.error);
+  };
+  window.fbAdminBanUser = async (userId, currentlyBanned) => {
+    if (currentlyBanned){
+      if (!confirm('Unban this user?')) return;
+      adminBan(userId, false).catch(console.error);
+    } else {
+      const reason = prompt('Ban reason (optional):') ?? '';
+      if (reason === null) return;
+      adminBan(userId, true, reason).catch(console.error);
+    }
+  };
+  window.fbAdminNote = async (postId) => {
+    const current = (_posts.find(p=>p.id===postId)||{}).admin_note||'';
+    const note = prompt('Admin note for this post:', current);
+    if (note === null) return;
+    adminPatch(postId, {admin_note: note}).catch(console.error);
+  };
+
+  // ── Load posts ────────────────────────────────────────────────
+  async function loadPosts(){
+    const { data, error } = await _sb
+      .from('posts_with_votes').select('*')
+      .order('pinned', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error){ console.error('loadPosts:', error); return; }
+    // Non-admins only see approved posts
+    _posts = (data||[]).filter(p => _isAdmin || p.approved !== false);
+    fbApplyFilters('features');
+    fbApplyFilters('bugs');
+    if (currentTop === 'roadmap') fbRenderRoadmap();
+  }
+
+  async function loadMyVotes(){
+    if (!_fbUser){ _myVotes = new Set(); return; }
+    const { data } = await _sb.from('votes').select('post_id').eq('user_id', _fbUser.id);
+    _myVotes = new Set((data||[]).map(v => v.post_id));
+  }
+
+  function subscribeRealtime(){
+    _sb.channel('public-posts')
+      .on('postgres_changes',{event:'*',schema:'public',table:'posts'},   loadPosts)
+      .on('postgres_changes',{event:'*',schema:'public',table:'votes'},   loadPosts)
+      .on('postgres_changes',{event:'*',schema:'public',table:'comments'},loadPosts)
+      .subscribe();
+  }
+
+  // ── Tab switching ─────────────────────────────────────────────
+  window.fbTopTab = function(btn, tab){
+    document.querySelectorAll('.fb-top-tab').forEach(b=>b.classList.toggle('active',b===btn));
+    document.querySelectorAll('.fb-top-pane').forEach(p=>p.classList.remove('active'));
+    document.getElementById('fb-top-'+tab).classList.add('active');
+    currentTop = tab;
+    if(tab==='roadmap') fbRenderRoadmap();
+    else fbApplyFilters(currentSub);
+  };
+
+  window.fbSubTab = function(btn, sub){
+    document.querySelectorAll('.fb-sub-tab').forEach(b=>b.classList.toggle('active',b===btn));
+    document.querySelectorAll('.fb-sub-pane').forEach(p=>p.classList.remove('active'));
+    document.getElementById('fb-sub-'+sub).classList.add('active');
+    currentSub = sub;
+    fbApplyFilters(sub);
+  };
+
+  // ── Filter & render ───────────────────────────────────────────
+  window.fbApplyFilters = function(type){
+    const isFeat = type === 'features';
+    const sortVal   = document.getElementById(isFeat?'fb-feat-sort':'fb-bug-sort').value;
+    const statusVal = document.getElementById(isFeat?'fb-feat-status':'fb-bug-status').value;
+    const cat = isFeat ? 'feature' : 'bug';
+
+    let items = _posts.filter(p => p.cat === cat);
+    if (statusVal !== 'all') items = items.filter(p => p.status === statusVal);
+    // Pinned items float to top regardless of sort
+    const pinned   = items.filter(p => p.pinned);
+    const unpinned = items.filter(p => !p.pinned);
+    if (sortVal === 'top')      unpinned.sort((a,b) => b.votes - a.votes);
+    else if (sortVal === 'new') unpinned.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    else                        unpinned.sort((a,b) => b.votes - a.votes);
+    items = [...pinned, ...unpinned];
+
+    const listEl  = document.getElementById(isFeat?'fb-feat-list':'fb-bug-list');
+    const countEl = document.getElementById(isFeat?'fb-feat-count':'fb-bug-count');
+    if (!listEl) return;
+    if (countEl) countEl.textContent = items.length + ' result'+(items.length!==1?'s':'');
+    listEl.innerHTML = '';
+    if (!items.length){ listEl.innerHTML='<div class="fb-empty">No posts yet — be the first to submit!</div>'; return; }
+
+    items.forEach(p => {
+      const voted = _myVotes.has(p.id);
+      const d = document.createElement('div');
+      d.className = 'fb-card'+(p.pinned?' fb-card-pinned':'')+(p.approved===false?' fb-card-hidden':'');
+      d.innerHTML = `
+        <div class="fb-vote-col">
+          <button class="fb-vote-btn${voted?' voted':''}" onclick="fbVote(event,${p.id})">▲</button>
+          <span class="fb-vote-n">${p.votes}</span>
+        </div>
+        <div class="fb-card-body">
+          <div class="fb-card-title">
+            ${p.pinned?'<span style="font-size:11px;margin-right:4px;" title="Pinned">📌</span>':''}
+            ${_esc(p.title)}
+            ${p.approved===false?'<span style="font-size:9px;font-family:DM Mono,monospace;color:#c00;margin-left:6px;">[hidden]</span>':''}
+          </div>
+          <div class="fb-card-desc">${_esc(p.description)}</div>
+          <div class="fb-card-meta">
+            <span class="fb-badge s-${p.status}">${sLabel(p.status)}</span>
+            <span class="fb-meta-item">${fmtTime(p.created_at)}</span>
+            ${p.author_name?`<span class="fb-meta-item" style="margin-left:auto;opacity:.6;">${_esc(p.author_name)}${p.author_banned?'<span style="color:#c00;margin-left:3px;">[banned]</span>':''}</span>`:''}
+          </div>
+          ${_adminBar(p)}
+        </div>`;
+      d.addEventListener('click', e => { if (!e.target.closest('.fb-vote-btn')&&!e.target.closest('.fb-admin-bar')) fbOpenPost(p.id); });
+      listEl.appendChild(d);
+    });
+  };
+
+  // ── Vote ──────────────────────────────────────────────────────
+  window.fbVote = async function(e, postId){
+    e.stopPropagation();
+    if (!_fbUser){ fbShowAuth(); return; }
+    // Check if user is banned
+    const post = _posts.find(p=>p.id===postId);
+    if (post?.author_banned && post?.user_id === _fbUser?.id) return;
+    if (_myVotes.has(postId)){
+      await _sb.from('votes').delete().eq('post_id',postId).eq('user_id',_fbUser.id);
+      _myVotes.delete(postId);
+    } else {
+      const { error } = await _sb.from('votes').insert({post_id:postId,user_id:_fbUser.id});
+      if (!error) _myVotes.add(postId);
+    }
+    await loadPosts();
+  };
+
+  window.fbClearComposer = function(){
+    const t=document.getElementById('fb-title'), b=document.getElementById('fb-body');
+    if(t) t.value=''; if(b) b.value='';
+  };
+  window.fbClearBugComposer = function(){
+    const t=document.getElementById('fb-bug-title'), b=document.getElementById('fb-bug-body');
+    if(t) t.value=''; if(b) b.value='';
+  };
+
+  window.fbSubmitPost = async function(cat){
+    if (!_fbUser){ fbShowAuth(); return; }
+    const isFeat = cat === 'feature';
+    const titleEl = document.getElementById(isFeat?'fb-title':'fb-bug-title');
+    const bodyEl  = document.getElementById(isFeat?'fb-body':'fb-bug-body');
+    if (!titleEl || !titleEl.value.trim()) return;
+    const { error } = await _sb.from('posts').insert({
+      user_id: _fbUser.id, title: titleEl.value.trim(),
+      description: bodyEl ? bodyEl.value.trim() : '',
+      cat, status: 'review',
+    });
+    if (error){ console.error('submitPost:', error); return; }
+    if (isFeat) fbClearComposer(); else fbClearBugComposer();
+    await loadPosts();
+  };
+
+  // ── Post detail modal ─────────────────────────────────────────
+  window.fbOpenPost = async function(postId){
+    const p = _posts.find(x => x.id === postId);
+    if (!p) return;
+    const { data: comments } = await _sb
+      .from('comments').select('*, profiles(name, initials)')
+      .eq('post_id', postId).order('created_at', {ascending:true});
+    const cmts  = comments || [];
+    const voted = _myVotes.has(postId);
+    const mount = document.getElementById('fb-modal-mount');
+    if (!mount) return;
+
+    // Admin note editor (inside modal)
+    const adminModalBar = _isAdmin ? `
+      <div style="border-top:1px solid var(--border);padding-top:10px;">
+        <div class="fb-section-label">Admin controls</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+          <select class="fb-admin-select" onchange="fbAdminStatus(${p.id},this.value)" style="flex:1;">
+            ${['review','planned','inprog','complete'].map(s=>`<option value="${s}"${p.status===s?' selected':''}>${sLabel(s)}</option>`).join('')}
+          </select>
+          <button class="fb-admin-btn" onclick="fbAdminPin(${p.id},${!p.pinned})">${p.pinned?'Unpin':'Pin'}</button>
+          <button class="fb-admin-btn" onclick="fbAdminNote(${p.id})">📝 Note</button>
+          <button class="fb-admin-btn fb-admin-btn-del" onclick="fbAdminDelete(${p.id});document.getElementById('fb-modal-mount').innerHTML=''">🗑 Delete</button>
+          ${p.user_id?`<button class="fb-admin-btn fb-admin-btn-ban" onclick="fbAdminBanUser('${p.user_id}',${p.author_banned})">${p.author_banned?'Unban user':'Ban user'}</button>`:''}
+        </div>
+      </div>` : '';
+
+    mount.innerHTML = `<div class="fb-modal-overlay">
+      <div class="fb-modal" onclick="event.stopPropagation()">
+        <div class="fb-modal-head">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="fb-badge ${p.cat==='bug'?'cat-bug':'cat-feat'}">${p.cat==='bug'?'Bug':'Feature'}</span>
+            <span class="fb-badge s-${p.status}">${sLabel(p.status)}</span>
+            <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-secondary);">${fmtTime(p.created_at)}</span>
+          </div>
+          <button class="fb-modal-close" onclick="document.getElementById('fb-modal-mount').innerHTML=''" aria-label="Close">✕</button>
+        </div>
+        <div class="fb-modal-body">
+          <div>
+            <div style="font-size:13px;font-weight:400;margin-bottom:5px;color:var(--text-primary);">${_esc(p.title)}</div>
+            <div class="fb-modal-desc">${_esc(p.description)||'<em style="opacity:.5">No description.</em>'}</div>
+          </div>
+          ${p.admin_note?`<div class="fb-admin-note"><div class="fb-admin-label">Dev update</div><div style="font-size:11px;color:var(--text-secondary);line-height:1.6;">${_esc(p.admin_note)}</div></div>`:''}
+          <div>
+            <div class="fb-section-label">${p.votes} vote${p.votes!==1?'s':''}</div>
+            <div style="margin-top:4px;">
+              <button class="fb-vote-btn${voted?' voted':''}" onclick="fbVote(event,${p.id})" style="font-size:12px;padding:4px 12px;border-radius:6px;">${voted?'▲ Voted':'▲ Vote'}</button>
+            </div>
+          </div>
+          ${adminModalBar}
+          <div>
+            <div class="fb-section-label">Discussion (${cmts.length})</div>
+            <div class="fb-comment-list" id="fb-modal-comments">
+              ${cmts.length ? cmts.map(c=>`<div class="fb-comment">
+                <div class="fb-c-avatar">${_esc(c.profiles?.initials||'?')}</div>
+                <div class="fb-c-bubble"><div class="fb-c-name">${_esc(c.profiles?.name||'Unknown')}</div>${_esc(c.body)}</div>
+              </div>`).join('') : '<div style="font-family:\'DM Mono\',monospace;font-size:10px;color:var(--text-secondary);padding:.5rem 0;">No comments yet.</div>'}
+            </div>
+            <div class="fb-c-input-row" style="margin-top:6px;">
+              <input type="text" placeholder="Add a comment…" id="fb-comment-inp-${p.id}" onkeydown="if(event.key==='Enter') fbAddComment(${p.id})">
+              <button class="fb-btn primary" onclick="fbAddComment(${p.id})">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  window.fbAddComment = async function(postId){
+    if (!_fbUser){ fbShowAuth(); return; }
+    const inp = document.getElementById('fb-comment-inp-'+postId);
+    if (!inp || !inp.value.trim()) return;
+    const body = inp.value.trim(); inp.value = '';
+    const { error } = await _sb.from('comments').insert({post_id:postId,user_id:_fbUser.id,body});
+    if (error){ console.error('addComment:', error); return; }
+    const thread = document.getElementById('fb-modal-comments');
+    if (thread){
+      const empty = thread.querySelector('div[style*="No comments"]');
+      if (empty) empty.remove();
+      const c = document.createElement('div'); c.className='fb-comment';
+      c.innerHTML=`<div class="fb-c-avatar" style="background:var(--accent);color:var(--tip-text,#fff);">${_esc(_fbUser.initials)}</div>
+        <div class="fb-c-bubble"><div class="fb-c-name">${_esc(_fbUser.name)}</div>${_esc(body)}</div>`;
+      thread.appendChild(c);
+    }
+  };
+
+  // ── Roadmap ───────────────────────────────────────────────────
+  function fbRenderRoadmap(){
+    const feats = _posts.filter(p=>p.cat==='feature').length;
+    const bugs  = _posts.filter(p=>p.cat==='bug').length;
+    const statsEl = document.getElementById('fb-rm-stats');
+    if (statsEl) statsEl.innerHTML=[['Feature requests',feats],['Bug reports',bugs]]
+      .map(([l,v])=>`<div class="fb-stat"><div class="fb-stat-label">${l}</div><div class="fb-stat-val">${v}</div></div>`).join('');
+    const colsEl = document.getElementById('fb-rm-cols');
+    if (!colsEl) return;
+    const defs=[{key:'planned',label:'Planned',cls:'planned'},{key:'inprog',label:'In progress',cls:'inprog'},{key:'complete',label:'Complete',cls:'complete'}];
+    colsEl.innerHTML=defs.map(col=>{
+      const items=_posts.filter(p=>p.status===col.key);
+      return `<div class="fb-rm-col">
+        <div class="fb-rm-col-head">
+          <span class="fb-rm-col-title ${col.cls}">${col.label}</span>
+          <span class="fb-rm-col-count">${items.length}</span>
+        </div>
+        <div class="fb-rm-items">${items.length
+          ?items.map(item=>`<div class="fb-rm-item" onclick="fbSwitchToFeatures(${item.id})">
+            <div class="fb-rm-item-title">${item.pinned?'📌 ':''} ${_esc(item.title)}</div>
+            <div class="fb-rm-item-foot">
+              <span class="fb-rm-votes">▲ ${item.votes}</span>
+              ${_isAdmin?`<span class="fb-admin-btn" style="font-size:9px;padding:2px 6px;cursor:pointer;" onclick="event.stopPropagation();fbAdminStatus(${item.id},prompt('Status (review/planned/inprog/complete):','${item.status}')||'${item.status}')">✏</span>`:''}
+              <span class="fb-rm-link">🔗 View</span>
+            </div>
+          </div>`).join('')
+          :'<div class="fb-empty" style="padding:1rem 0;">Nothing here yet.</div>'}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  window.fbSwitchToFeatures = function(postId){
+    const ft=document.querySelector('.fb-top-tab[data-top="feedback"]');
+    if(ft) fbTopTab(ft,'feedback');
+    const st=document.querySelector('.fb-sub-tab[data-sub="features"]');
+    if(st) fbSubTab(st,'features');
+    setTimeout(()=>fbOpenPost(postId),50);
+  };
+
+  // ── Auth ──────────────────────────────────────────────────────
+  function _fbUpdateUI(){
+    const signinBtn  = document.getElementById('fb-signin-btn');
+    const userChip   = document.getElementById('fb-user-chip');
+    const userAvatar = document.getElementById('fb-user-avatar');
+    const userName   = document.getElementById('fb-user-name');
+    if (_fbUser){
+      if(signinBtn)  signinBtn.style.display='none';
+      if(userChip)   userChip.style.display='flex';
+      if(userAvatar) userAvatar.textContent=_fbUser.initials;
+      if(userName)   userName.textContent=_fbUser.name;
+    } else {
+      if(signinBtn)  signinBtn.style.display='';
+      if(userChip)   userChip.style.display='none';
+    }
+    _renderAdminBadge();
+  }
+
+  let _fbAuthMode = 'signin';
+
+  window.fbShowAuth = function(mode){
+    _fbAuthMode = mode||'signin';
+    _applyAuthMode();
+    document.getElementById('fb-auth-error').textContent='';
+    document.getElementById('fb-auth-email').value='';
+    document.getElementById('fb-auth-pass').value='';
+    const n=document.getElementById('fb-auth-name'); if(n) n.value='';
+    document.getElementById('fb-auth-modal').classList.add('open');
+    setTimeout(()=>document.getElementById('fb-auth-email').focus(),80);
+  };
+
+  window.fbHideAuth = function(){
+    document.getElementById('fb-auth-modal').classList.remove('open');
+  };
+
+  window.fbToggleAuthMode = function(){
+    _fbAuthMode = _fbAuthMode==='signin'?'signup':'signin';
+    _applyAuthMode();
+    document.getElementById('fb-auth-error').textContent='';
+  };
+
+  function _applyAuthMode(){
+    const s=_fbAuthMode==='signup';
+    document.getElementById('fb-auth-title').textContent      = s?'Create account':'Sign in';
+    document.getElementById('fb-auth-submit-btn').textContent = s?'Create account':'Sign in';
+    document.getElementById('fb-auth-subtitle').textContent   = s
+      ?'Create an account to submit feedback and vote on posts.'
+      :'Sign in to submit feedback and vote on posts.';
+    document.getElementById('fb-auth-switch').innerHTML = s
+      ?'Already have an account? <button onclick="fbToggleAuthMode()">Sign in</button>'
+      :'Don\'t have an account? <button onclick="fbToggleAuthMode()">Sign up</button>';
+    document.getElementById('fb-auth-name-row').style.display = s?'':'none';
+    document.getElementById('fb-auth-pass').placeholder       = s?'Choose a password':'Password';
+  }
+
+  window.fbAuthSubmit = async function(){
+    const email  = document.getElementById('fb-auth-email').value.trim();
+    const pass   = document.getElementById('fb-auth-pass').value;
+    const errEl  = document.getElementById('fb-auth-error');
+    const btnEl  = document.getElementById('fb-auth-submit-btn');
+    errEl.textContent='';
+    if (!email||!email.includes('@')){ errEl.textContent='Please enter a valid email.'; return; }
+    if (pass.length<6){ errEl.textContent='Password must be at least 6 characters.'; return; }
+    btnEl.disabled=true;
+    btnEl.textContent=_fbAuthMode==='signup'?'Creating…':'Signing in…';
+
+    let session = null;
+    if (_fbAuthMode==='signup'){
+      const nameVal=(document.getElementById('fb-auth-name').value||'').trim();
+      if (!nameVal){ errEl.textContent='Please enter your name.'; btnEl.disabled=false; _applyAuthMode(); return; }
+      const { data, error } = await _sb.auth.signUp({ email, password:pass, options:{data:{full_name:nameVal}} });
+      if (error){ errEl.textContent=error.message; btnEl.disabled=false; _applyAuthMode(); return; }
+      session = data.session;
+    } else {
+      const { data, error } = await _sb.auth.signInWithPassword({email,password:pass});
+      if (error){ errEl.textContent=error.message; btnEl.disabled=false; _applyAuthMode(); return; }
+      session = data.session;
+    }
+
+    if (session) {
+      const r = await fetch('/auth/set-session', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ access_token: session.access_token, refresh_token: session.refresh_token }),
+      });
+      const d = await r.json();
+      if (d.user) { _fbUser = d.user; await checkAdmin(); _fbUpdateUI(); }
+    }
+    btnEl.disabled=false; _applyAuthMode(); fbHideAuth();
+  };
+
+  window.fbSignInWithGoogle = async function(){
+    const { error } = await _sb.auth.signInWithOAuth({ provider:'google', options:{redirectTo:window.location.href} });
+    if (error) console.error('Google OAuth:', error);
+  };
+
+  window.fbSignOut = async function(){
+    await fetch('/auth/logout', { method:'POST' });
+    await _sb.auth.signOut();
+    _fbUser = null; _isAdmin = false; _myVotes = new Set();
+    _fbUpdateUI(); fbApplyFilters(currentSub);
+  };
+
+  _sb.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session && !_fbUser) {
+      const r = await fetch('/auth/set-session', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ access_token: session.access_token, refresh_token: session.refresh_token }),
+      });
+      const d = await r.json();
+      if (d.user) {
+        _fbUser = d.user;
+        await checkAdmin();
+        _fbUpdateUI();
+        await loadMyVotes();
+        fbApplyFilters('features');
+        fbApplyFilters('bugs');
+      }
+    }
+  });
+
+  async function _bootstrap() {
+    try {
+      const res  = await fetch('/auth/me');
+      const data = await res.json();
+      if (data.user) { _fbUser = data.user; await checkAdmin(); }
+    } catch (_) {}
+    _fbUpdateUI();
+    await loadMyVotes();
+    loadPosts();
+    subscribeRealtime();
+  }
+  _bootstrap();
+
+  ['fb-auth-email','fb-auth-pass','fb-auth-name'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('keydown',e=>{ if(e.key==='Enter') fbAuthSubmit(); });
+  });
+
+  const obs = new MutationObserver(()=>{
+    const overlay=document.getElementById('feedback-overlay');
+    if(overlay && overlay.classList.contains('open')) loadPosts();
+  });
+  const overlayTarget=document.getElementById('feedback-overlay');
+  if(overlayTarget) obs.observe(overlayTarget,{attributes:true,attributeFilter:['class']});
+
+})();
+</script>
 
 <div id="loading">
   <div class="load-title">Loading model</div>
@@ -545,7 +1464,6 @@
 <script src="js/scene.js"></script>
 <script src="js/skeleton.js"></script>
 <script src="js/uv-designer.js"></script>
-<script src="js/draw.js"></script>
 <script src="js/draw-3d.js"></script>
 <script src="js/scene-controls.js"></script>
 <script src="js/ui.js"></script>
@@ -597,6 +1515,9 @@ window.toggleTheme = function() {
     SCENE.scene.background = new THREE.Color(bg);
     SCENE.renderer.setClearColor(bg, 1);
   }
+
+  // Redraw skeleton diagram with theme-appropriate colours
+  if (typeof SKELETON !== 'undefined') SKELETON.drawDiagram();
 
   try { localStorage.setItem('mehendi_dark', isDark ? '1' : '0'); } catch(e) {}
 };
